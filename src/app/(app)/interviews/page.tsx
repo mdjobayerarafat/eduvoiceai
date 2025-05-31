@@ -18,7 +18,7 @@ import type { InterviewProgressionInput, InterviewProgressionOutput } from "@/ai
 import { getFinalInterviewFeedback } from "@/ai/flows/final-interview-feedback-flow";
 import type { FinalInterviewFeedbackInput, FinalInterviewFeedbackOutput } from "@/ai/flows/final-interview-feedback-flow";
 import { account, databases, ID, Permission, Role, APPWRITE_DATABASE_ID, INTERVIEWS_COLLECTION_ID, AppwriteException } from "@/lib/appwrite";
-import type { InterviewReport } from "@/types/interviewReport";
+import type { InterviewReport, InterviewExchangeForReport } from "@/types/interviewReport";
 
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, AlertTriangle, Video, VideoOff, MessageSquare, Sparkles, Mic, MicOff, Volume2, VolumeX, TimerIcon, StopCircle, ThumbsUp, ThumbsDown, Award, Camera, CameraOff, Save } from "lucide-react";
@@ -408,7 +408,6 @@ const MockInterviewPage: NextPage = () => {
 
       speakText(farewellMessage);
       
-      // Attempt to save the report after displaying it
       if (generatedFeedback) {
         await saveInterviewReport(generatedFeedback, interviewConfig, finalInterviewHistory);
       }
@@ -428,7 +427,7 @@ const MockInterviewPage: NextPage = () => {
   const saveInterviewReport = async (
     feedback: FinalInterviewFeedbackOutput,
     config: InterviewConfigInput,
-    history: InterviewExchange[]
+    history: InterviewExchange[] // This is the finalInterviewHistory
   ) => {
     if (!APPWRITE_DATABASE_ID || !INTERVIEWS_COLLECTION_ID) {
       toast({ title: "Configuration Error", description: "Interview saving is not configured.", variant: "destructive" });
@@ -444,10 +443,11 @@ const MockInterviewPage: NextPage = () => {
       const reportData: Omit<InterviewReport, keyof AppwriteException.Models.Document | '$databaseId' | '$collectionId' | '$permissions'> = {
         userId: user.$id,
         jobDescription: config.jobDescription,
-        resumeDataUri: config.resume, // Assuming resume is a data URI
+        resumeDataUri: config.resume,
         overallScore: feedback.overallScore,
         overallSummary: feedback.overallSummary,
-        detailedFeedback: JSON.stringify(feedback.detailedFeedback),
+        detailedFeedback: JSON.stringify(feedback.detailedFeedback), // This is an array of {question, answer, specificFeedback, questionScore}
+        rawInterviewHistory: JSON.stringify(history.map(h => ({ question: h.question, answer: h.answer } as InterviewExchangeForReport))),
         closingRemark: feedback.closingRemark || "",
       };
 
@@ -464,7 +464,7 @@ const MockInterviewPage: NextPage = () => {
       );
       toast({
         title: "Interview Report Saved",
-        description: "Your mock interview report has been saved to your history.",
+        description: "Your mock interview report, including all questions and feedback, has been saved.",
         action: <Save className="h-5 w-5 text-green-500" />,
       });
     } catch (err) {
@@ -808,3 +808,4 @@ const MockInterviewPage: NextPage = () => {
 }
 
 export default MockInterviewPage;
+
