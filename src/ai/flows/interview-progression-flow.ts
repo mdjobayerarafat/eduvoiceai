@@ -17,7 +17,7 @@ const InterviewExchangeSchema = z.object({
   answer: z.string().describe("The user's answer to the question."),
 });
 
-export const InterviewProgressionInputSchema = z.object({
+const InterviewProgressionInputSchema = z.object({
   resume: z
     .string()
     .describe('The resume of the candidate, as a data URI.'),
@@ -26,7 +26,7 @@ export const InterviewProgressionInputSchema = z.object({
 });
 export type InterviewProgressionInput = z.infer<typeof InterviewProgressionInputSchema>;
 
-export const InterviewProgressionOutputSchema = z.object({
+const InterviewProgressionOutputSchema = z.object({
   feedbackOnLastAnswer: z.string().describe("Constructive feedback on the user's most recent answer."),
   nextQuestion: z.string().describe("The next interview question to ask the user."),
 });

@@ -18,7 +18,6 @@ const InterviewConfigInputSchema = z.object({
     .string()
     .describe('The resume of the candidate, as a data URI that must include a MIME type and use Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.'),
   jobDescription: z.string().describe('The job description for the role the candidate is interviewing for.'),
-  // userResponses array is removed as we are generating the first question, not feedback yet.
 });
 export type InterviewConfigInput = z.infer<typeof InterviewConfigInputSchema>;
 
@@ -55,8 +54,6 @@ const firstQuestionFlow = ai.defineFlow(
     outputSchema: FirstQuestionOutputSchema,
   },
   async (input) => {
-    // We pass an empty userResponses array if the underlying prompt/model still expects it,
-    // but the prompt itself is now focused on generating the first question.
     const {output} = await firstQuestionPrompt(input);
     return output!;
   }
