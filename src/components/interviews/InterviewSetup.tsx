@@ -4,7 +4,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import { useRouter } from "next/navigation";
 import React, { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -20,9 +19,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { mockInterview } from "@/ai/flows/mock-interview-flow";
-import type { MockInterviewInput } from "@/ai/flows/mock-interview-flow";
 import { Loader2, Sparkles } from "lucide-react";
+import type { InterviewConfigInput } from "@/ai/flows/mock-interview-flow";
 
 const formSchema = z.object({
   jobDescription: z.string().min(50, {
@@ -59,12 +57,13 @@ async function fileToDataUri(file: File): Promise<string> {
   });
 }
 
-export function InterviewSetup() {
-  const router = useRouter();
-  const { toast } = useToast();
-  const [isProcessing, setIsProcessing] = useState(false);
-  // const [interviewData, setInterviewData] = useState<MockInterviewInput | null>(null);
+interface InterviewSetupProps {
+  onSetupComplete: (data: InterviewConfigInput) => void;
+  isProcessingSetup: boolean;
+}
 
+export function InterviewSetup({ onSetupComplete, isProcessingSetup }: InterviewSetupProps) {
+  const { toast } = useToast();
 
   const form = useForm<InterviewSetupFormValues>({
     resolver: zodResolver(formSchema),
@@ -75,7 +74,6 @@ export function InterviewSetup() {
   });
 
   async function onSubmit(values: InterviewSetupFormValues) {
-    setIsProcessing(true);
     toast({
       title: "Processing Setup",
       description: "Preparing your interview session...",
@@ -85,32 +83,12 @@ export function InterviewSetup() {
       const resumeFile = values.resume[0];
       const resumeDataUri = await fileToDataUri(resumeFile);
 
-      const setupData: Omit<MockInterviewInput, 'userResponses'> = {
+      const setupData: InterviewConfigInput = {
         jobDescription: values.jobDescription,
         resume: resumeDataUri,
       };
       
-      console.log("Interview Setup Data:", setupData);
-
-      // At this point, we have the JD and resume.
-      // The current `mockInterview` flow expects `userResponses`, which we don't have yet.
-      // For a real application, you might:
-      // 1. Store `setupData` (e.g., in state, context, or backend).
-      // 2. Navigate to a new page/view where the AI asks the first question.
-      // 3. Collect responses, then finally call `mockInterview` with all data.
-
-      // For now, we'll simulate this completion and show a success message.
-      // In a future step, this could trigger the first question generation.
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate AI processing
-
-      toast({
-        title: "Setup Complete!",
-        description: "Your mock interview is ready to begin (simulation). Next step would be the actual interview.",
-      });
-      
-      // Example: Store in session storage and navigate
-      // sessionStorage.setItem('interviewSetup', JSON.stringify(setupData));
-      // router.push('/interviews/session'); // Hypothetical session page
+      onSetupComplete(setupData);
 
     } catch (error) {
       console.error("Error processing interview setup:", error);
@@ -119,8 +97,8 @@ export function InterviewSetup() {
         description: error instanceof Error ? error.message : "An unknown error occurred during setup.",
         variant: "destructive",
       });
-    } finally {
-      setIsProcessing(false);
+      // Ensure the parent component knows processing ended if an error occurs before onSetupComplete
+      // This might require an additional callback or state lift from the parent if it's managing the spinner independently
     }
   }
 
@@ -138,7 +116,7 @@ export function InterviewSetup() {
                   placeholder="Paste the job description here..."
                   rows={10}
                   {...field}
-                  disabled={isProcessing}
+                  disabled={isProcessingSetup}
                 />
               </FormControl>
               <FormDescription>
@@ -161,7 +139,7 @@ export function InterviewSetup() {
                   accept=".pdf,.txt,.docx"
                   onChange={(e) => onChange(e.target.files)}
                   {...restField}
-                  disabled={isProcessing}
+                  disabled={isProcessingSetup}
                 />
               </FormControl>
               <FormDescription>
@@ -172,15 +150,15 @@ export function InterviewSetup() {
           )}
         />
 
-        <Button type="submit" disabled={isProcessing} className="w-full md:w-auto">
-          {isProcessing ? (
+        <Button type="submit" disabled={isProcessingSetup} className="w-full md:w-auto">
+          {isProcessingSetup ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Processing...
             </>
           ) : (
             <>
-              Start Interview Setup
+              Start Interview
               <Sparkles className="ml-2 h-4 w-4" />
             </>
           )}
