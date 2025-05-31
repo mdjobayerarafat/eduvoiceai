@@ -68,7 +68,7 @@ const MockInterviewPage: NextPage = () => {
       utterance.onstart = () => setIsAISpeaking(true);
       utterance.onend = () => setIsAISpeaking(false);
       utterance.onerror = (event) => {
-        console.error("SpeechSynthesisUtterance.onerror", event);
+        // console.error("SpeechSynthesisUtterance.onerror", event); // Removed this line
         setIsAISpeaking(false);
         toast({ title: "Speech Error", description: "Could not play AI voice.", variant: "destructive"});
       };
@@ -708,5 +708,3 @@ const MockInterviewPage: NextPage = () => {
 }
 
 export default MockInterviewPage;
-
-    
