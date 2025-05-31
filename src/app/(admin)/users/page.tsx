@@ -10,7 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Users, MoreHorizontal, Search, Filter, Download, ShieldCheck, Ban, TrendingUp, Loader2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { account, users as appwriteUsers, AppwriteException } from "@/lib/appwrite";
+// Corrected import: directly import 'users'
+import { account, users, AppwriteException } from "@/lib/appwrite"; 
 import type { AppwriteUser } from "@/types/appwriteUser"; // Use the more specific type
 import { formatDistanceToNow } from 'date-fns';
 
@@ -26,7 +27,7 @@ const getConceptualUserStatus = (user: AppwriteUser): string => {
 export default function ManageUsersPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
-  const [users, setUsers] = useState<AppwriteUser[]>([]);
+  const [userList, setUserList] = useState<AppwriteUser[]>([]); // Renamed to avoid conflict with imported 'users'
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,11 +42,9 @@ export default function ManageUsersPage() {
           return;
         }
 
-        // Fetch users - Note: Listing users might require specific Appwrite permissions.
-        // This call might fail if not executed with an API key with users.read scope or by an admin.
-        // For client-side, ensure permissions are set or use a backend function.
-        const response = await appwriteUsers.list();
-        setUsers(response.users as AppwriteUser[]);
+        // Use the imported 'users' service directly
+        const response = await users.list(); 
+        setUserList(response.users as AppwriteUser[]);
 
       } catch (err: any) {
         console.error("Error fetching users or admin check:", err);
@@ -61,7 +60,7 @@ export default function ManageUsersPage() {
     fetchUsersAndCheckAdmin();
   }, [router]);
 
-  const filteredUsers = users.filter(user =>
+  const filteredUsers = userList.filter(user =>
     (user.name && user.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
@@ -113,7 +112,7 @@ export default function ManageUsersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="font-headline text-xl">User List ({filteredUsers.length} / {users.length})</CardTitle>
+          <CardTitle className="font-headline text-xl">User List ({filteredUsers.length} / {userList.length})</CardTitle>
           <CardDescription>
             Browse and manage all registered users. Some actions are conceptual and require backend implementation.
           </CardDescription>
@@ -205,7 +204,7 @@ export default function ManageUsersPage() {
               {filteredUsers.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="h-24 text-center">
-                    {users.length > 0 ? "No users found matching your search." : "No users found in the system."}
+                    {userList.length > 0 ? "No users found matching your search." : "No users found in the system."}
                   </TableCell>
                 </TableRow>
               )}

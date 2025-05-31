@@ -1,5 +1,5 @@
 
-import { Client, Account, Databases, Storage, Avatars, ID, Permission, Role, Query, AppwriteException } from 'appwrite';
+import * as Appwrite from 'appwrite';
 
 const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
 const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
@@ -15,7 +15,7 @@ if (typeof projectId !== 'string' || projectId.trim() === '') {
   );
 }
 
-const client = new Client();
+const client = new Appwrite.Client();
 
 try {
   client
@@ -27,13 +27,30 @@ try {
   );
 }
 
-const account = new Account(client);
-const databases = new Databases(client);
-const storage = new Storage(client);
-const avatars = new Avatars(client);
+const account = new Appwrite.Account(client);
+const databases = new Appwrite.Databases(client);
+const storage = new Appwrite.Storage(client);
+const avatars = new Appwrite.Avatars(client);
+const users = new Appwrite.Users(client);
 
-export { client, account, databases, storage, avatars, ID, Permission, Role, Query, AppwriteException };
+// Re-export Appwrite utilities with their simple names for consistent usage elsewhere
+const ID = Appwrite.ID;
+const Permission = Appwrite.Permission;
+const Role = Appwrite.Role;
+const Query = Appwrite.Query;
+const AppwriteException = Appwrite.AppwriteException;
+
+
+export { client, account, databases, storage, avatars, users, ID, Permission, Role, Query, AppwriteException };
 
 export const APPWRITE_DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
 export const LECTURES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_LECTURES_COLLECTION_ID!;
 export const INTERVIEWS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_INTERVIEWS_COLLECTION_ID!;
+
+export const VOUCHERS_COLLECTION_ID = process.env.NEXT_PUBLIC_VOUCHERS_COLLECTION_ID;
+
+if (typeof VOUCHERS_COLLECTION_ID !== 'string' || VOUCHERS_COLLECTION_ID.trim() === '') {
+  throw new Error(
+    `VOUCHERS_COLLECTION_ID is not a valid string or is empty. Value: "${VOUCHERS_COLLECTION_ID}", Type: ${typeof VOUCHERS_COLLECTION_ID}. Please check your .env file and ensure your Next.js server has been restarted.`
+  );
+}

@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import { account, databases, ID, Permission, Role, APPWRITE_DATABASE_ID, VOUCHERS_COLLECTION_ID, AppwriteException } from "@/lib/appwrite";
 import type { Voucher } from "@/types/voucher";
+import { Models } from "appwrite";
 
 interface VoucherFormData {
   code: string;
