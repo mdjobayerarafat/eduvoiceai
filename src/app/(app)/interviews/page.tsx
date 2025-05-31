@@ -81,26 +81,28 @@ const MockInterviewPage: NextPage = () => {
       });
     } else {
       const recognition = new SpeechRecognition();
-      recognition.continuous = false; // Process speech after a pause
+      recognition.continuous = false; 
       recognition.interimResults = true;
 
       recognition.onstart = () => setIsListening(true);
       recognition.onend = () => setIsListening(false);
-      recognition.onerror = (event) => {
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.error('Speech recognition error', event.error);
         setIsListening(false);
         let errorMsg = "Speech recognition error. Please try again.";
         if (event.error === 'no-speech') {
-            errorMsg = "No speech detected. Please try again.";
+            errorMsg = "No speech was detected. Please ensure your microphone is working and try again.";
         } else if (event.error === 'audio-capture') {
-            errorMsg = "Microphone error. Please check your microphone.";
+            errorMsg = "Microphone error. Could not capture audio. Please check your microphone connection and permissions.";
         } else if (event.error === 'not-allowed') {
-            errorMsg = "Microphone access denied. Please allow microphone access.";
+            errorMsg = "Microphone access denied. Please allow microphone access in your browser settings.";
+        } else if (event.error === 'network') {
+            errorMsg = "Network error. Speech recognition requires an internet connection.";
         }
         toast({ title: "Voice Input Error", description: errorMsg, variant: "destructive" });
       };
 
-      recognition.onresult = (event) => {
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
         let finalTranscript = "";
         let interimTranscript = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -110,18 +112,12 @@ const MockInterviewPage: NextPage = () => {
             interimTranscript += event.results[i][0].transcript;
           }
         }
-        setUserAnswer(prev => prev.substring(0, prev.length - interimTranscript.length) + finalTranscript + interimTranscript);
-         // If final, update userAnswer and stop listening for this phrase
+        
         if (finalTranscript.trim()) {
-            setUserAnswer(prev => {
-                // Remove the interim part and keep the final
-                const currentInterimGuess = interimTranscript.trim() ? interimTranscript : "";
-                if (prev.endsWith(currentInterimGuess)) {
-                    return prev.slice(0, -currentInterimGuess.length) + finalTranscript.trim();
-                }
-                return prev + finalTranscript.trim();
-            });
+             setUserAnswer(prev => prev + finalTranscript.trim() + " "); // Add space for better separation
         }
+        // For continuous interim updates, you might want to show interimTranscript in UI
+        // For this setup, we'll primarily rely on finalTranscript to build the answer
       };
       recognitionRef.current = recognition;
     }
@@ -150,9 +146,19 @@ const MockInterviewPage: NextPage = () => {
           } catch (err) {
             console.error('Error accessing camera:', err);
             setHasCameraPermission(false);
+             toast({
+              variant: 'destructive',
+              title: 'Camera Access Denied',
+              description: 'Please enable camera permissions in your browser settings to use video.',
+            });
           }
         } else {
           setHasCameraPermission(false);
+          toast({
+            variant: 'destructive',
+            title: 'Camera Not Supported',
+            description: 'Your browser does not support camera access.',
+          });
         }
       } else {
         if (videoRef.current && videoRef.current.srcObject) {
@@ -172,7 +178,7 @@ const MockInterviewPage: NextPage = () => {
         videoRef.current.srcObject = null;
       }
     };
-  }, [stage]);
+  }, [stage, toast]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -216,19 +222,24 @@ const MockInterviewPage: NextPage = () => {
     if (isListening) {
       recognitionRef.current.stop();
     } else {
-      // Clear previous answer before starting new recognition if desired
-      // setUserAnswer(""); 
       try {
+        // It's a good practice to clear the answer or part of it if continuous listening is not intended for multi-phrase answers.
+        // setUserAnswer(""); // Uncomment if you want to clear previous answer before new speech
         recognitionRef.current.start();
       } catch (e) {
          console.error("Error starting recognition:", e);
-         setIsListening(false);
+         setIsListening(false); // Ensure listening state is reset
          let errorMsg = "Could not start voice input. ";
-         // Attempt to infer permission issue, though specific error codes are better
-         if (e instanceof Error && (e.name === 'NotAllowedError' || e.message.includes('permission'))) {
-            errorMsg += "Please allow microphone access in browser settings.";
+         if (e instanceof DOMException) {
+            if (e.name === 'NotAllowedError' || e.name === 'SecurityError') {
+                errorMsg += "Microphone access was denied. Please allow microphone access in your browser settings and refresh the page.";
+            } else if (e.name === 'InvalidStateError') {
+                errorMsg += "Speech recognition is already active or in an invalid state. Please try again.";
+            } else {
+                errorMsg += "Please check your microphone and browser settings.";
+            }
          } else {
-            errorMsg += "Please check your microphone.";
+            errorMsg += "An unexpected error occurred. Please check your microphone.";
          }
          toast({ title: "Voice Input Error", description: errorMsg, variant: "destructive" });
       }
@@ -243,41 +254,54 @@ const MockInterviewPage: NextPage = () => {
       });
       return;
     }
-    if (isListening) {
-        recognitionRef.current?.stop();
+    if (isListening && recognitionRef.current) {
+        recognitionRef.current.stop();
     }
     if (speechSynthesis?.speaking) {
         speechSynthesis.cancel();
+        setIsAISpeaking(false);
     }
 
     setStage("next_question_loading");
     setError(null);
 
-    const currentExchange: InterviewExchange = { question: currentQuestion, answer: userAnswer };
-    // Add current exchange to history immediately for UI update, feedback will be added later
+    const currentExchange: InterviewExchange = { question: currentQuestion, answer: userAnswer.trim() };
     setInterviewHistory(prev => [...prev, currentExchange]);
     
     try {
       const input: InterviewProgressionInput = {
         resume: interviewConfig.resume,
         jobDescription: interviewConfig.jobDescription,
-        interviewHistory: [...interviewHistory, { question: currentQuestion, answer: userAnswer }], // Send the latest answer with the history
+        interviewHistory: [...interviewHistory, { question: currentQuestion, answer: userAnswer.trim() }],
       };
       const result: InterviewProgressionOutput = await getFeedbackAndNextQuestion(input);
       
       setInterviewHistory(prev => {
           const newHistory = [...prev];
-          if (newHistory.length > 0) { // The last item is the one just added, update its feedback
+          if (newHistory.length > 0) { 
               newHistory[newHistory.length -1].feedback = result.feedbackOnLastAnswer;
           }
           return newHistory;
       });
-      speakText(result.feedbackOnLastAnswer);
-      // Wait for feedback to finish speaking (or a short delay) before asking the next question
-      setTimeout(() => {
-          setCurrentQuestion(result.nextQuestion);
-          speakText(result.nextQuestion);
-      }, result.feedbackOnLastAnswer.length > 0 && isTTSEnabled ? 100 + result.feedbackOnLastAnswer.length * 60 : 0); // Rough estimate for speech duration
+      
+      if (isTTSEnabled && result.feedbackOnLastAnswer) {
+        speakText(result.feedbackOnLastAnswer);
+        // Wait for feedback to finish speaking (or a short delay) before asking the next question
+        // This needs a more robust way to chain speech, perhaps using utterance.onend
+        const feedbackDurationEstimate = result.feedbackOnLastAnswer.length * 60; // Rough estimate
+        setTimeout(() => {
+            if (result.nextQuestion) {
+                setCurrentQuestion(result.nextQuestion);
+                if (isTTSEnabled) speakText(result.nextQuestion);
+            }
+        }, isAISpeaking ? feedbackDurationEstimate + 200 : 0); // Add buffer if AI was already speaking
+      } else {
+         if (result.nextQuestion) {
+            setCurrentQuestion(result.nextQuestion);
+            if (isTTSEnabled) speakText(result.nextQuestion);
+         }
+      }
+
 
       setUserAnswer("");
       setStage("interviewing");
@@ -295,18 +319,21 @@ const MockInterviewPage: NextPage = () => {
         description: "Could not get feedback or the next question. Please try again if the issue persists.",
         variant: "destructive",
       });
-       // Ensure AI speaking state is reset on error
       setIsAISpeaking(false);
     }
   };
 
   const toggleTTS = () => {
     setIsTTSEnabled(prev => {
-      if (prev && speechSynthesis && speechSynthesis.speaking) {
+      const newTTSEnabledState = !prev;
+      if (!newTTSEnabledState && speechSynthesis && speechSynthesis.speaking) {
         speechSynthesis.cancel();
         setIsAISpeaking(false);
       }
-      return !prev;
+      toast({
+        title: `AI Voice ${newTTSEnabledState ? "Enabled" : "Disabled"}`,
+      });
+      return newTTSEnabledState;
     });
   };
 
@@ -336,7 +363,7 @@ const MockInterviewPage: NextPage = () => {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error} Please <Button variant="link" className="p-0 h-auto" onClick={() => { setStage("setup"); setError(null); setInterviewConfig(null); setInterviewHistory([]); setCurrentQuestion(null); setUserAnswer(""); }}>restart setup</Button>.</AlertDescription>
+          <AlertDescription>{error} Please <Button variant="link" className="p-0 h-auto" onClick={() => { setStage("setup"); setError(null); setInterviewConfig(null); setInterviewHistory([]); setCurrentQuestion(null); setUserAnswer(""); setIsAISpeaking(false); setIsListening(false); }}>restart setup</Button>.</AlertDescription>
         </Alert>
       )}
 
@@ -368,7 +395,6 @@ const MockInterviewPage: NextPage = () => {
       
       {(stage === "interviewing" || stage === "next_question_loading") && (currentQuestion || interviewHistory.length > 0) && (
         <div className="flex-grow flex flex-col md:flex-row gap-4 overflow-hidden">
-          {/* Video Feed Section */}
           <div className="w-full md:w-1/3 lg:w-1/4 space-y-2 flex flex-col">
              <CardTitle className="font-headline text-lg flex items-center px-1">
               {hasCameraPermission ? <Video className="mr-2 text-green-500" /> : <VideoOff className="mr-2 text-red-500" />}
@@ -382,11 +408,11 @@ const MockInterviewPage: NextPage = () => {
                 <AlertTriangle className="h-3 w-3" />
                 <AlertTitle className="text-sm">Camera Issue</AlertTitle>
                 <AlertDescription className="text-xs">
-                  Could not access camera. Grant permissions in browser settings.
+                  Could not access camera. Please grant permissions in your browser settings and refresh.
                 </AlertDescription>
               </Alert>
             )}
-            {hasCameraPermission === null && stage === "interviewing" && ( 
+            {hasCameraPermission === null && (stage === "interviewing" || stage === "next_question_loading") && ( 
                  <Alert className="mt-2 text-xs">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <AlertTitle className="text-sm">Camera</AlertTitle>
@@ -397,7 +423,6 @@ const MockInterviewPage: NextPage = () => {
             )}
           </div>
 
-          {/* Q&A Section */}
           <Card className="flex-grow flex flex-col overflow-hidden">
             <CardHeader className="pb-2">
               <CardTitle className="font-headline text-xl flex items-center">
@@ -414,7 +439,7 @@ const MockInterviewPage: NextPage = () => {
                         <p className="font-semibold">Interviewer:</p>
                         <p className="text-sm whitespace-pre-wrap">{exchange.question}</p>
                       </div>
-                      <div className="p-3 rounded-lg bg-primary/10 text-right ml-auto max-w-[80%]">
+                      <div className="p-3 rounded-lg bg-primary/10 text-right ml-auto max-w-[80%] self-end">
                         <p className="font-semibold text-left">You:</p>
                         <p className="text-sm whitespace-pre-wrap text-left">{exchange.answer}</p>
                       </div>
@@ -426,7 +451,7 @@ const MockInterviewPage: NextPage = () => {
                       )}
                     </div>
                   ))}
-                  {currentQuestion && (stage === "interviewing" || stage === "next_question_loading" && !interviewHistory.find(h => h.question === currentQuestion)) && (
+                  {currentQuestion && (stage === "interviewing" || (stage === "next_question_loading" && !interviewHistory.find(h => h.question === currentQuestion && !!h.answer))) && (
                      <div className="p-3 rounded-lg bg-muted">
                         <p className="font-semibold">Interviewer:</p>
                         <p className="text-sm whitespace-pre-wrap">{currentQuestion}</p>
@@ -440,21 +465,20 @@ const MockInterviewPage: NextPage = () => {
                 <div className="mt-auto pt-4 border-t">
                   <div className="flex items-center gap-2">
                     <Textarea 
-                      placeholder={isListening ? "Listening..." : "Type or speak your answer here..."}
+                      placeholder={isListening ? "Listening... Speak clearly." : "Type or click mic to speak your answer..."}
                       rows={4} 
                       value={userAnswer}
                       onChange={(e) => setUserAnswer(e.target.value)}
                       className="text-base flex-grow"
-                      disabled={stage === "next_question_loading" || isListening}
+                      disabled={stage === "next_question_loading" || isListening || isAISpeaking}
                     />
                     {SpeechRecognition && (
                       <Button 
                         onClick={handleToggleListen} 
-                        variant="outline" 
+                        variant={isListening ? "destructive" : "outline"}
                         size="icon" 
                         disabled={stage === "next_question_loading" || isAISpeaking}
-                        title={isListening ? "Stop Listening" : "Start Listening"}
-                        className={isListening ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground" : ""}
+                        title={isListening ? "Stop Listening" : "Start Listening (Speak after clicking)"}
                       >
                         {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
                       </Button>
@@ -482,4 +506,3 @@ const MockInterviewPage: NextPage = () => {
 
 export default MockInterviewPage;
 
-    
