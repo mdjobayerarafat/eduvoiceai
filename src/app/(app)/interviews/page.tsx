@@ -33,6 +33,7 @@ const SpeechRecognition = (typeof window !== 'undefined' && (window.SpeechRecogn
 const speechSynthesis = (typeof window !== 'undefined' && window.speechSynthesis) || null;
 
 const INTERVIEW_DURATION_MINUTES = 10;
+const INTERVIEW_WRAP_UP_SECONDS = 30;
 
 const MockInterviewPage: NextPage = () => {
   const [stage, setStage] = useState<InterviewStage>("setup");
@@ -84,9 +85,13 @@ const MockInterviewPage: NextPage = () => {
     setRemainingTime(INTERVIEW_DURATION_MINUTES * 60);
     timerRef.current = setInterval(() => {
       setRemainingTime(prevTime => {
-        if (prevTime <= 1) {
+        if (prevTime <= INTERVIEW_WRAP_UP_SECONDS + 1) { // Check if time is up or at wrap-up threshold
           clearInterval(timerRef.current!);
-          handleEndInterview("timer");
+          if (prevTime <= 1) { // Time fully elapsed
+            handleEndInterview("timer_elapsed");
+          } else { // Reached wrap-up time
+            handleEndInterview("timer_wrapping_up");
+          }
           return 0;
         }
         return prevTime - 1;
@@ -175,7 +180,7 @@ const MockInterviewPage: NextPage = () => {
     const manageCamera = async () => {
       if (!isVideoEnabled || isCameraBeingToggled) {
         stopCameraStream();
-        setHasCameraPermission(null); // Reset permission status if video explicitly disabled
+        setHasCameraPermission(null); 
         return;
       }
 
@@ -231,13 +236,13 @@ const MockInterviewPage: NextPage = () => {
     setFinalFeedback(null);
     setCurrentQuestion(null);
     setUserAnswer("");
-    setIsVideoEnabled(true); // Ensure video is attempted to be enabled on new interview start
+    setIsVideoEnabled(true); 
     try {
       const result: FirstQuestionOutput = await getFirstInterviewQuestion(data);
       setCurrentQuestion(result.firstQuestion);
       setStage("interviewing");
       startTimer();
-      speakText(result.firstQuestion); // AI's first question (includes greeting)
+      speakText(result.firstQuestion); 
       toast({
         title: "Interview Started!",
         description: "The first question is ready. The timer has begun.",
@@ -271,12 +276,9 @@ const MockInterviewPage: NextPage = () => {
       } catch (e) {
          setIsListening(false); 
          let errorMsg = "Could not start voice input. ";
-         // @ts-ignore
-         if (e && e.name) { 
-            // @ts-ignore
+         if (e && typeof e === 'object' && 'name' in e) { 
             if (e.name === 'NotAllowedError' || e.name === 'SecurityError') {
                 errorMsg += "Microphone access was denied. Please allow microphone access in your browser settings and refresh the page.";
-            // @ts-ignore
             } else if (e.name === 'InvalidStateError') {
                 errorMsg += "Speech recognition is already active or in an invalid state. Please try again.";
             } else {
@@ -347,7 +349,7 @@ const MockInterviewPage: NextPage = () => {
     }
   };
 
-  const handleEndInterview = async (reason: "timer" | "manual" | "no_more_questions") => {
+  const handleEndInterview = async (reason: "timer_elapsed" | "timer_wrapping_up" | "manual" | "no_more_questions") => {
     stopTimer();
     setStage("final_feedback_loading");
     if (isListening && recognitionRef.current) recognitionRef.current.stop();
@@ -355,9 +357,10 @@ const MockInterviewPage: NextPage = () => {
     setIsAISpeaking(false);
 
     let endMessage = "Interview ended. ";
-    if (reason === "timer") endMessage += "Time's up!";
-    if (reason === "manual") endMessage += "You ended the interview.";
-    if (reason === "no_more_questions") endMessage += "The AI has no more questions for you at this time.";
+    if (reason === "timer_elapsed") endMessage += "Time's up!";
+    else if (reason === "timer_wrapping_up") endMessage += `Wrapping up as time is nearly complete (${INTERVIEW_WRAP_UP_SECONDS}s left).`;
+    else if (reason === "manual") endMessage += "You ended the interview.";
+    else if (reason === "no_more_questions") endMessage += "The AI has no more questions for you at this time.";
 
     toast({
         title: "Interview Over",
@@ -371,13 +374,15 @@ const MockInterviewPage: NextPage = () => {
     }
     
     let finalInterviewHistory = [...interviewHistory];
-    if (currentQuestion && userAnswer.trim() && (reason === "timer" || reason === "manual")) {
+    // Include the current answer if the interview ended while the user was typing/answering
+    if (currentQuestion && userAnswer.trim() && (reason === "timer_elapsed" || reason === "timer_wrapping_up" || reason === "manual")) {
         const lastAnswerNotYetInHistory = !finalInterviewHistory.some(ex => ex.question === currentQuestion && ex.answer === userAnswer.trim());
         if (lastAnswerNotYetInHistory) {
             finalInterviewHistory.push({ question: currentQuestion, answer: userAnswer.trim() });
         }
     }
 
+    // Ensure there's at least one exchange if only the first question was answered.
     if (finalInterviewHistory.length === 0 && currentQuestion && userAnswer.trim()){
          finalInterviewHistory.push({ question: currentQuestion, answer: userAnswer.trim() });
     }
@@ -391,10 +396,13 @@ const MockInterviewPage: NextPage = () => {
       const result = await getFinalInterviewFeedback(input);
       setFinalFeedback(result);
       setStage("final_feedback_display");
-      let farewellMessage = `Your interview is complete. You scored ${result.overallScore} out of 100. ${result.overallSummary}.`;
-      if (result.closingRemark) {
-        farewellMessage = `${result.closingRemark} ${farewellMessage}`;
+      let farewellMessage = result.closingRemark || `Your interview is complete. You scored ${result.overallScore} out of 100. ${result.overallSummary}.`;
+      if (result.closingRemark && reason !== "timer_wrapping_up" && reason !== "timer_elapsed") { // Avoid duplicating if closing remark is main message
+           farewellMessage = `${result.closingRemark} Overall, you scored ${result.overallScore}/100. ${result.overallSummary}`;
+      } else if (reason === "timer_wrapping_up" || reason === "timer_elapsed") {
+          farewellMessage = `${result.closingRemark} Thank you for your time. Your interview has concluded. You scored ${result.overallScore}/100. ${result.overallSummary}`;
       }
+
       speakText(farewellMessage);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
@@ -428,11 +436,9 @@ const MockInterviewPage: NextPage = () => {
     setIsVideoEnabled(newVideoEnabledState);
     if (!newVideoEnabledState) {
         stopCameraStream();
-        setHasCameraPermission(null); // User explicitly turned off camera
+        setHasCameraPermission(null); 
     }
-    // The useEffect for manageCamera will handle re-requesting permission if turned back on
     toast({ title: `Camera ${newVideoEnabledState ? "Enabled" : "Disabled"}` });
-    // Allow time for stream to stop/start before resetting toggle flag
     setTimeout(() => setIsCameraBeingToggled(false), 500); 
   };
 
@@ -457,7 +463,7 @@ const MockInterviewPage: NextPage = () => {
     setRemainingTime(INTERVIEW_DURATION_MINUTES * 60);
     stopCameraStream();
     setHasCameraPermission(null); 
-    setIsVideoEnabled(true); // Default to video enabled for new interview
+    setIsVideoEnabled(true); 
   };
 
   return (
@@ -538,6 +544,9 @@ const MockInterviewPage: NextPage = () => {
               <CardContent>
                 <p className="text-3xl font-mono font-semibold text-center">{formatTime(remainingTime)}</p>
                 <Progress value={(remainingTime / (INTERVIEW_DURATION_MINUTES * 60)) * 100} className="mt-2 h-2" />
+                 {remainingTime <= INTERVIEW_WRAP_UP_SECONDS && remainingTime > 0 && (
+                    <p className="text-xs text-center text-destructive mt-1">Wrapping up soon...</p>
+                )}
               </CardContent>
             </Card>
             
@@ -732,3 +741,5 @@ const MockInterviewPage: NextPage = () => {
 }
 
 export default MockInterviewPage;
+
+    
