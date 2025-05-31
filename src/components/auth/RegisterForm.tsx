@@ -125,4 +125,10 @@ export function RegisterForm() {
         <p className="text-sm text-muted-foreground">
           Already have an account?{" "}
           <Button variant="link" asChild className="p-0 h-auto">
-            <Link href="/login">Login
+            <Link href="/register">Register</Link>
+          </Button>
+        </p>
+      </CardFooter>
+    </Card>
+  );
+}
