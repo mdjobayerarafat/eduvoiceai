@@ -32,7 +32,7 @@ const useAppwriteUser = () => {
         const currentUser = await account.get();
         setUser(currentUser);
         // Check if the user has the 'admin' label in Appwrite.
-        // For this to work, you must assign the 'admin' label to your admin users
+        // This requires assigning the 'admin' label to admin users
         // in the Appwrite console (Users -> select user -> Labels).
         if (currentUser?.labels?.includes('admin')) { 
           setIsAdmin(true);
