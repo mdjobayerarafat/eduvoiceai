@@ -5,11 +5,15 @@ import { Greeting } from "@/components/dashboard/Greeting";
 import { NavigationButtons } from "@/components/dashboard/NavigationButtons";
 import { RecentActivityCard } from "@/components/dashboard/RecentActivityCard";
 import { Separator } from "@/components/ui/separator";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { BookCopy, FileText, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { account, databases, Query, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID } from "@/lib/appwrite";
-import type { Lecture } from "@/types/lecture"; // Assuming you have this type
+import { account, databases, Query, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID, AppwriteException } from "@/lib/appwrite";
+import type { Lecture } from "@/types/lecture";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useToast } from "@/hooks/use-toast";
 
 interface DashboardActivityItem {
   id: string;
@@ -18,15 +22,16 @@ interface DashboardActivityItem {
   href: string;
 }
 
-// Placeholder data for interview feedback (can be updated later)
 const interviewFeedbackData: DashboardActivityItem[] = [
-  { id: "1", title: "Software Engineer Mock Interview", timestamp: "1 week ago", href: "/interviews/history" }, // Update href later
-  { id: "2", title: "Product Manager Behavioral Interview", timestamp: "3 weeks ago", href: "/interviews/history" }, // Update href later
+  { id: "1", title: "Software Engineer Mock Interview", timestamp: "1 week ago", href: "/interviews/history" },
+  { id: "2", title: "Product Manager Behavioral Interview", timestamp: "3 weeks ago", href: "/interviews/history" },
 ];
 
 export default function DashboardPage() {
   const [recentLectures, setRecentLectures] = useState<DashboardActivityItem[]>([]);
   const [isLoadingLectures, setIsLoadingLectures] = useState(true);
+  const router = useRouter();
+  const { toast } = useToast();
 
   useEffect(() => {
     const fetchRecentLectures = async () => {
@@ -34,9 +39,9 @@ export default function DashboardPage() {
       try {
         const user = await account.get();
         if (!user?.$id) {
-          // Not logged in, or error fetching user
+          // This case should ideally be caught by the error handling below if account.get() throws
           setRecentLectures([]);
-          setIsLoadingLectures(false);
+          router.push("/login");
           return;
         }
         
@@ -53,31 +58,40 @@ export default function DashboardPage() {
           [
             Query.equal("userId", user.$id),
             Query.orderDesc("$createdAt"),
-            Query.limit(3) // Fetch 3 most recent
+            Query.limit(3)
           ]
         );
         
         const lecturesData = response.documents.map(doc => {
-          const lecture = doc as Lecture; // Cast to your Lecture type
+          const lecture = doc as Lecture;
           return {
             id: lecture.$id,
             title: lecture.topic,
-            timestamp: new Date(lecture.$createdAt).toLocaleDateString(), // Or use date-fns for better formatting
-            href: `/lectures/view/${lecture.$id}` // Link to a future detailed view page
+            timestamp: new Date(lecture.$createdAt).toLocaleDateString(),
+            href: `/lectures/view/${lecture.$id}`
           };
         });
         setRecentLectures(lecturesData);
 
       } catch (error) {
-        console.error("Error fetching recent lectures for dashboard:", error);
-        setRecentLectures([]); // Set to empty on error
+        console.error("Dashboard auth/data fetch error:", error);
+        if (error instanceof AppwriteException && 
+            (error.code === 401 ||
+             error.type === 'user_unauthorized' || 
+             error.type === 'general_unauthorized_scope')) {
+          toast({ title: "Session Expired", description: "Please log in again.", variant: "default" });
+          router.push('/login');
+        } else {
+          toast({ title: "Error Loading Dashboard", description: "Could not load dashboard data. Please try again later.", variant: "destructive" });
+          setRecentLectures([]);
+        }
       } finally {
         setIsLoadingLectures(false);
       }
     };
 
     fetchRecentLectures();
-  }, []);
+  }, [router, toast]);
 
   return (
     <div className="space-y-6">
@@ -109,8 +123,8 @@ export default function DashboardPage() {
             ) : recentLectures.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">No lectures generated yet.</p>
             ) : (
-              <ScrollArea className="h-[150px]"> {/* Adjusted height */}
-                <div className="space-y-3"> {/* Adjusted spacing */}
+              <ScrollArea className="h-[150px]">
+                <div className="space-y-3">
                   {recentLectures.map((item) => (
                     <Link href={item.href} key={item.id} className="block p-2 -m-2 rounded-md hover:bg-muted">
                         <div className="font-medium truncate">{item.title}</div>
@@ -133,13 +147,12 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Interview Feedback card remains with placeholder data for now */}
         <RecentActivityCard
           title="Interview Feedback"
           icon={FileText}
           items={interviewFeedbackData}
           emptyMessage="No interview feedback available."
-          viewAllLink="/interviews/history" // Placeholder link, to be updated when interview history is implemented
+          viewAllLink="/interviews/history"
         />
       </div>
     </div>

@@ -3,20 +3,22 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { account, databases, Query, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID } from "@/lib/appwrite";
+import { account, databases, Query, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID, AppwriteException } from "@/lib/appwrite";
 import type { Lecture } from "@/types/lecture";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BookOpen, AlertTriangle, Loader2, PlusCircle, History, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
+import { useRouter } from "next/navigation";
 
 export default function LectureHistoryPage() {
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const router = useRouter();
 
   useEffect(() => {
     const fetchLectures = async () => {
@@ -25,7 +27,8 @@ export default function LectureHistoryPage() {
       try {
         const user = await account.get();
         if (!user?.$id) {
-          throw new Error("User not authenticated. Please log in.");
+           // This case should ideally be caught by the error handling below
+          throw new AppwriteException("User not authenticated.", 401, "user_unauthorized");
         }
 
         if (!APPWRITE_DATABASE_ID || !LECTURES_COLLECTION_ID) {
@@ -39,35 +42,43 @@ export default function LectureHistoryPage() {
           LECTURES_COLLECTION_ID,
           [
             Query.equal("userId", user.$id),
-            Query.orderDesc("$createdAt"), // Show newest first
-            Query.limit(50) // Fetch up to 50 lectures
+            Query.orderDesc("$createdAt"),
+            Query.limit(50)
           ]
         );
         setLectures(response.documents as Lecture[]);
       } catch (err: any) {
-        console.error("Error fetching lectures:", err);
-        let errorMessage = "Could not fetch your saved lectures.";
-        if (err.message) {
-            errorMessage = err.message;
+        console.error("Lecture history auth/data fetch error:", err);
+        if (err instanceof AppwriteException && 
+            (err.code === 401 || 
+             err.type === 'user_unauthorized' || 
+             err.type === 'general_unauthorized_scope')) {
+          toast({ title: "Session Expired", description: "Please log in to view lecture history.", variant: "default" });
+          router.push('/login');
+        } else {
+            let errorMessage = "Could not fetch your saved lectures.";
+            if (err.message) {
+                errorMessage = err.message;
+            }
+            if (err.code === 401 && err.type === 'user_unauthorized') { // This condition is somewhat redundant now
+                errorMessage = "You are not authorized to view these lectures or your session might have expired. Please try logging in again.";
+            } else if (err.message?.includes("configured")) {
+                 errorMessage = err.message;
+            }
+            setError(errorMessage);
+            toast({
+              title: "Error Fetching Lectures",
+              description: errorMessage.substring(0,150),
+              variant: "destructive",
+            });
         }
-        if (err.code === 401 && err.type === 'user_unauthorized') {
-            errorMessage = "You are not authorized to view these lectures or your session might have expired. Please try logging in again.";
-        } else if (err.message?.includes("configured")) {
-             errorMessage = err.message; // Show specific config error
-        }
-        setError(errorMessage);
-        toast({
-          title: "Error Fetching Lectures",
-          description: errorMessage.substring(0,150),
-          variant: "destructive",
-        });
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchLectures();
-  }, [toast]);
+  }, [router, toast]);
 
   return (
     <div className="space-y-8">
@@ -87,7 +98,7 @@ export default function LectureHistoryPage() {
         </Button>
       </div>
 
-      {error && (
+      {error && !isLoading && ( // Only show error if not loading and error exists
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Loading Error</AlertTitle>
@@ -135,7 +146,6 @@ export default function LectureHistoryPage() {
                 </p>
               </CardContent>
               <CardFooter>
-                {/* In a future step, this could link to a detailed view page for this specific lecture */}
                 <Button variant="outline" className="w-full" asChild>
                   <Link href={`/lectures/view/${lecture.$id}`}>
                     <Eye className="mr-2 h-4 w-4" /> View Lecture
