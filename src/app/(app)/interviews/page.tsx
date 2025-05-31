@@ -68,7 +68,6 @@ const MockInterviewPage: NextPage = () => {
       utterance.onstart = () => setIsAISpeaking(true);
       utterance.onend = () => setIsAISpeaking(false);
       utterance.onerror = (event) => {
-        // console.error("SpeechSynthesisUtterance.onerror", event); // Removed this line
         setIsAISpeaking(false);
         toast({ title: "Speech Error", description: "Could not play AI voice.", variant: "destructive"});
       };
@@ -392,12 +391,22 @@ const MockInterviewPage: NextPage = () => {
         setStage("setup"); // Go back to setup
         return;
     }
+    
+    // Ensure the last answer is captured if interview ended manually or by timer before submitting
+    let finalInterviewHistory = [...interviewHistory];
+    if (currentQuestion && userAnswer.trim() && (reason === "timer" || reason === "manual")) {
+        const lastExchangeNotYetSubmitted = !finalInterviewHistory.some(ex => ex.question === currentQuestion && ex.answer === userAnswer.trim());
+        if (lastExchangeNotYetSubmitted) {
+            finalInterviewHistory.push({ question: currentQuestion, answer: userAnswer.trim() });
+        }
+    }
+
 
     try {
       const input: FinalInterviewFeedbackInput = {
         resume: interviewConfig.resume,
         jobDescription: interviewConfig.jobDescription,
-        fullInterviewHistory: interviewHistory.map(h => ({ question: h.question, answer: h.answer })), // Only Q&A needed
+        fullInterviewHistory: finalInterviewHistory.map(h => ({ question: h.question, answer: h.answer })),
       };
       const result = await getFinalInterviewFeedback(input);
       setFinalFeedback(result);
@@ -681,7 +690,7 @@ const MockInterviewPage: NextPage = () => {
 
             <div>
                 <h3 className="font-headline text-xl font-semibold mb-3">Detailed Question Feedback</h3>
-                <ScrollArea className="max-h-[400px] pr-3">
+                <ScrollArea className="h-[400px] pr-3">
                     <div className="space-y-4">
                     {finalFeedback.detailedFeedback.map((item, index) => (
                         <Card key={index} className="p-4">
@@ -708,3 +717,4 @@ const MockInterviewPage: NextPage = () => {
 }
 
 export default MockInterviewPage;
+
