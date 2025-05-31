@@ -1,3 +1,3 @@
-export default function Home() {
-  return <></>;
-}
+import LandingPage from './(marketing)/page';
+
+export default LandingPage;
