@@ -36,3 +36,4 @@ export { client, account, databases, storage, avatars, ID, Permission, Role, Que
 
 export const APPWRITE_DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
 export const LECTURES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_LECTURES_COLLECTION_ID!;
+export const INTERVIEWS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_INTERVIEWS_COLLECTION_ID!;

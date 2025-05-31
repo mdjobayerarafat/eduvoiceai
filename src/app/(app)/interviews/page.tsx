@@ -17,9 +17,11 @@ import { getFeedbackAndNextQuestion } from "@/ai/flows/interview-progression-flo
 import type { InterviewProgressionInput, InterviewProgressionOutput } from "@/ai/flows/interview-progression-flow";
 import { getFinalInterviewFeedback } from "@/ai/flows/final-interview-feedback-flow";
 import type { FinalInterviewFeedbackInput, FinalInterviewFeedbackOutput } from "@/ai/flows/final-interview-feedback-flow";
+import { account, databases, ID, Permission, Role, APPWRITE_DATABASE_ID, INTERVIEWS_COLLECTION_ID, AppwriteException } from "@/lib/appwrite";
+import type { InterviewReport } from "@/types/interviewReport";
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, AlertTriangle, Video, VideoOff, MessageSquare, Sparkles, Mic, MicOff, Volume2, VolumeX, TimerIcon, StopCircle, ThumbsUp, ThumbsDown, Award, Camera, CameraOff } from "lucide-react";
+import { Loader2, AlertTriangle, Video, VideoOff, MessageSquare, Sparkles, Mic, MicOff, Volume2, VolumeX, TimerIcon, StopCircle, ThumbsUp, ThumbsDown, Award, Camera, CameraOff, Save } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 type InterviewStage = "setup" | "first_question_loading" | "interviewing" | "next_question_loading" | "final_feedback_loading" | "final_feedback_display" | "error";
@@ -59,6 +61,8 @@ const MockInterviewPage: NextPage = () => {
   const [remainingTime, setRemainingTime] = useState(INTERVIEW_DURATION_MINUTES * 60);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [finalFeedback, setFinalFeedback] = useState<FinalInterviewFeedbackOutput | null>(null);
+  const [isSavingReport, setIsSavingReport] = useState(false);
+
 
   const speakText = useCallback((text: string) => {
     if (!speechSynthesis || !isTTSEnabled || !text) return;
@@ -85,11 +89,11 @@ const MockInterviewPage: NextPage = () => {
     setRemainingTime(INTERVIEW_DURATION_MINUTES * 60);
     timerRef.current = setInterval(() => {
       setRemainingTime(prevTime => {
-        if (prevTime <= INTERVIEW_WRAP_UP_SECONDS + 1) { // Check if time is up or at wrap-up threshold
+        if (prevTime <= INTERVIEW_WRAP_UP_SECONDS + 1) { 
           clearInterval(timerRef.current!);
-          if (prevTime <= 1) { // Time fully elapsed
+          if (prevTime <= 1) { 
             handleEndInterview("timer_elapsed");
-          } else { // Reached wrap-up time
+          } else { 
             handleEndInterview("timer_wrapping_up");
           }
           return 0;
@@ -374,7 +378,6 @@ const MockInterviewPage: NextPage = () => {
     }
     
     let finalInterviewHistory = [...interviewHistory];
-    // Include the current answer if the interview ended while the user was typing/answering
     if (currentQuestion && userAnswer.trim() && (reason === "timer_elapsed" || reason === "timer_wrapping_up" || reason === "manual")) {
         const lastAnswerNotYetInHistory = !finalInterviewHistory.some(ex => ex.question === currentQuestion && ex.answer === userAnswer.trim());
         if (lastAnswerNotYetInHistory) {
@@ -382,28 +385,34 @@ const MockInterviewPage: NextPage = () => {
         }
     }
 
-    // Ensure there's at least one exchange if only the first question was answered.
     if (finalInterviewHistory.length === 0 && currentQuestion && userAnswer.trim()){
          finalInterviewHistory.push({ question: currentQuestion, answer: userAnswer.trim() });
     }
 
+    let generatedFeedback: FinalInterviewFeedbackOutput | null = null;
     try {
       const input: FinalInterviewFeedbackInput = {
         resume: interviewConfig.resume,
         jobDescription: interviewConfig.jobDescription,
         fullInterviewHistory: finalInterviewHistory.map(h => ({ question: h.question, answer: h.answer })),
       };
-      const result = await getFinalInterviewFeedback(input);
-      setFinalFeedback(result);
+      generatedFeedback = await getFinalInterviewFeedback(input);
+      setFinalFeedback(generatedFeedback);
       setStage("final_feedback_display");
-      let farewellMessage = result.closingRemark || `Your interview is complete. You scored ${result.overallScore} out of 100. ${result.overallSummary}.`;
-      if (result.closingRemark && reason !== "timer_wrapping_up" && reason !== "timer_elapsed") { // Avoid duplicating if closing remark is main message
-           farewellMessage = `${result.closingRemark} Overall, you scored ${result.overallScore}/100. ${result.overallSummary}`;
+      let farewellMessage = generatedFeedback.closingRemark || `Your interview is complete. You scored ${generatedFeedback.overallScore} out of 100. ${generatedFeedback.overallSummary}.`;
+      if (generatedFeedback.closingRemark && reason !== "timer_wrapping_up" && reason !== "timer_elapsed") {
+           farewellMessage = `${generatedFeedback.closingRemark} Overall, you scored ${generatedFeedback.overallScore}/100. ${generatedFeedback.overallSummary}`;
       } else if (reason === "timer_wrapping_up" || reason === "timer_elapsed") {
-          farewellMessage = `${result.closingRemark} Thank you for your time. Your interview has concluded. You scored ${result.overallScore}/100. ${result.overallSummary}`;
+          farewellMessage = `${generatedFeedback.closingRemark} Thank you for your time. Your interview has concluded. You scored ${generatedFeedback.overallScore}/100. ${generatedFeedback.overallSummary}`;
       }
 
       speakText(farewellMessage);
+      
+      // Attempt to save the report after displaying it
+      if (generatedFeedback) {
+        await saveInterviewReport(generatedFeedback, interviewConfig, finalInterviewHistory);
+      }
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to get final feedback: ${errorMessage}`);
@@ -413,6 +422,63 @@ const MockInterviewPage: NextPage = () => {
         description: "Could not generate the final interview report.",
         variant: "destructive",
       });
+    }
+  };
+
+  const saveInterviewReport = async (
+    feedback: FinalInterviewFeedbackOutput,
+    config: InterviewConfigInput,
+    history: InterviewExchange[]
+  ) => {
+    if (!APPWRITE_DATABASE_ID || !INTERVIEWS_COLLECTION_ID) {
+      toast({ title: "Configuration Error", description: "Interview saving is not configured.", variant: "destructive" });
+      return;
+    }
+    setIsSavingReport(true);
+    try {
+      const user = await account.get();
+      if (!user?.$id) {
+        throw new Error("User not authenticated for saving report.");
+      }
+
+      const reportData: Omit<InterviewReport, keyof AppwriteException.Models.Document | '$databaseId' | '$collectionId' | '$permissions'> = {
+        userId: user.$id,
+        jobDescription: config.jobDescription,
+        resumeDataUri: config.resume, // Assuming resume is a data URI
+        overallScore: feedback.overallScore,
+        overallSummary: feedback.overallSummary,
+        detailedFeedback: JSON.stringify(feedback.detailedFeedback),
+        closingRemark: feedback.closingRemark || "",
+      };
+
+      await databases.createDocument(
+        APPWRITE_DATABASE_ID,
+        INTERVIEWS_COLLECTION_ID,
+        ID.unique(),
+        reportData,
+        [
+          Permission.read(Role.user(user.$id)),
+          Permission.update(Role.user(user.$id)),
+          Permission.delete(Role.user(user.$id)),
+        ]
+      );
+      toast({
+        title: "Interview Report Saved",
+        description: "Your mock interview report has been saved to your history.",
+        action: <Save className="h-5 w-5 text-green-500" />,
+      });
+    } catch (err) {
+      console.error("Error saving interview report:", err);
+      let errMsg = "Could not save interview report.";
+      if (err instanceof AppwriteException) errMsg = `Appwrite error: ${err.message}`;
+      else if (err instanceof Error) errMsg = err.message;
+      toast({
+        title: "Save Report Failed",
+        description: errMsg.substring(0, 150),
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingReport(false);
     }
   };
 
@@ -680,6 +746,7 @@ const MockInterviewPage: NextPage = () => {
             <CardDescription>
                 {finalFeedback.closingRemark && <p className="italic mb-2">{finalFeedback.closingRemark}</p>}
                 Here's your overall performance and detailed feedback.
+                {isSavingReport && <span className="ml-2 text-sm text-muted-foreground italic">(Saving report...)</span>}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-grow overflow-y-auto p-4 space-y-6">
@@ -741,5 +808,3 @@ const MockInterviewPage: NextPage = () => {
 }
 
 export default MockInterviewPage;
-
-    
