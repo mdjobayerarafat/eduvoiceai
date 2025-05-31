@@ -7,7 +7,7 @@ import { RecentActivityCard } from "@/components/dashboard/RecentActivityCard";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { BookCopy, FileText, Loader2 } from "lucide-react";
+import { BookCopy, FileText, Loader2, ShieldAlert, ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { account, databases, Query, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID, INTERVIEWS_COLLECTION_ID, AppwriteException } from "@/lib/appwrite";
 import type { Lecture } from "@/types/lecture";
@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from 'date-fns';
+import { ADMIN_NAV_ITEMS } from "@/lib/constants";
 
 interface DashboardActivityItem {
   id: string;
@@ -29,6 +30,7 @@ export default function DashboardPage() {
   const [isLoadingLectures, setIsLoadingLectures] = useState(true);
   const [recentInterviewReports, setRecentInterviewReports] = useState<DashboardActivityItem[]>([]);
   const [isLoadingInterviewReports, setIsLoadingInterviewReports] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -36,6 +38,7 @@ export default function DashboardPage() {
     const fetchDashboardData = async () => {
       setIsLoadingLectures(true);
       setIsLoadingInterviewReports(true);
+      setIsAdmin(false); // Reset admin status on fetch
       
       try {
         const user = await account.get();
@@ -44,6 +47,13 @@ export default function DashboardPage() {
           return;
         }
         const userId = user.$id;
+
+        // Placeholder admin check: In a real app, use Appwrite roles or labels.
+        if (user?.email === 'admin@example.com') {
+          setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
+        }
 
         // Fetch Recent Lectures
         if (APPWRITE_DATABASE_ID && LECTURES_COLLECTION_ID) {
@@ -126,6 +136,7 @@ export default function DashboardPage() {
         }
         setIsLoadingLectures(false);
         setIsLoadingInterviewReports(false);
+        setIsAdmin(false);
       }
     };
 
@@ -145,6 +156,43 @@ export default function DashboardPage() {
         <h2 className="font-headline text-2xl font-semibold mb-4">Get Started</h2>
         <NavigationButtons />
       </div>
+
+      {isAdmin && (
+        <>
+          <Separator />
+          <div>
+            <h2 className="font-headline text-2xl font-semibold mb-4 flex items-center">
+              <ShieldAlert className="mr-2 h-6 w-6 text-primary" /> Admin Panel
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {ADMIN_NAV_ITEMS.map((item) => (
+                <Link href={item.href} key={item.label} legacyBehavior>
+                  <a className="block hover:no-underline group">
+                    <Card className="hover:shadow-lg hover:border-primary/50 transition-all duration-200 cursor-pointer h-full flex flex-col">
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="font-headline text-lg font-medium text-primary">
+                          {item.label}
+                        </CardTitle>
+                        <item.icon className="h-6 w-6 text-accent" />
+                      </CardHeader>
+                      <CardContent className="flex-grow">
+                        <p className="text-xs text-muted-foreground">
+                          Access the {item.label.toLowerCase()} section.
+                        </p>
+                      </CardContent>
+                      <div className="p-4 pt-0 mt-auto">
+                          <span className="text-sm font-medium text-primary group-hover:underline flex items-center">
+                              Go to {item.label} <ArrowRight className="ml-1 h-4 w-4" />
+                          </span>
+                      </div>
+                    </Card>
+                  </a>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
       <Separator />
 
@@ -174,5 +222,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-    
