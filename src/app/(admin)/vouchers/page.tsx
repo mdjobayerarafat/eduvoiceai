@@ -99,7 +99,8 @@ export default function ManageVouchersPage() {
         throw new Error("Voucher collection configuration is missing for creation.");
       }
 
-      const newVoucherData: Omit<Voucher, keyof Models.Document | '$databaseId' | '$collectionId' | '$permissions' | 'status' | 'uses'> = {
+      const newVoucherData: Omit<Voucher, keyof Models.Document | '$databaseId' | '$collectionId' | '$permissions' | 'status' | 'uses'> & { key: string } = {
+        key: formData.code.toUpperCase(), // Added key attribute
         code: formData.code.toUpperCase(),
         discountPercent: parseInt(formData.discountPercent),
         expiryDate: new Date(formData.expiryDate).toISOString(), // Store as ISO string
@@ -119,9 +120,9 @@ export default function ManageVouchersPage() {
         ID.unique(),
         fullNewVoucher,
         [
-          Permission.read(Role.any()), // Or Role.users() if only logged-in users can see/use vouchers
-          Permission.update(Role.label("admin")), // Use label for admin permissions
-          Permission.delete(Role.label("admin"))  // Use label for admin permissions
+          Permission.read(Role.any()), 
+          Permission.update(Role.label("admin")), 
+          Permission.delete(Role.label("admin"))  
         ]
       );
       
@@ -205,7 +206,7 @@ export default function ManageVouchersPage() {
             <PlusCircle className="mr-2 h-5 w-5 text-accent" /> Create New Voucher
           </CardTitle>
           <CardDescription>
-            Define a new voucher code. Ensure your Appwrite 'vouchers' collection is set up with appropriate attributes (code, discountPercent, expiryDate, maxUses, uses, status) and permissions.
+            Define a new voucher code. Ensure your Appwrite 'vouchers' collection is set up with appropriate attributes (key, code, discountPercent, expiryDate, maxUses, uses, status) and permissions.
           </CardDescription>
         </CardHeader>
         <CardContent>
