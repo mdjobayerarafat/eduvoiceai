@@ -27,7 +27,6 @@ export default function LectureHistoryPage() {
       try {
         const user = await account.get();
         if (!user?.$id) {
-           // This case should ideally be caught by the error handling below
           throw new AppwriteException("User not authenticated.", 401, "user_unauthorized");
         }
 
@@ -43,7 +42,7 @@ export default function LectureHistoryPage() {
           [
             Query.equal("userId", user.$id),
             Query.orderDesc("$createdAt"),
-            Query.limit(50)
+            Query.limit(50) // You can adjust this limit or implement pagination later
           ]
         );
         setLectures(response.documents as Lecture[]);
@@ -59,11 +58,6 @@ export default function LectureHistoryPage() {
             let errorMessage = "Could not fetch your saved lectures.";
             if (err.message) {
                 errorMessage = err.message;
-            }
-            if (err.code === 401 && err.type === 'user_unauthorized') { // This condition is somewhat redundant now
-                errorMessage = "You are not authorized to view these lectures or your session might have expired. Please try logging in again.";
-            } else if (err.message?.includes("configured")) {
-                 errorMessage = err.message;
             }
             setError(errorMessage);
             toast({
@@ -98,7 +92,7 @@ export default function LectureHistoryPage() {
         </Button>
       </div>
 
-      {error && !isLoading && ( // Only show error if not loading and error exists
+      {error && !isLoading && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Loading Error</AlertTitle>
@@ -135,7 +129,7 @@ export default function LectureHistoryPage() {
           {lectures.map((lecture) => (
             <Card key={lecture.$id} className="flex flex-col">
               <CardHeader>
-                <CardTitle className="font-headline text-xl line-clamp-2">{lecture.topic}</CardTitle>
+                <CardTitle className="font-headline text-xl line-clamp-2" title={lecture.topic}>{lecture.topic}</CardTitle>
                 <CardDescription>
                   Saved {formatDistanceToNow(new Date(lecture.$createdAt), { addSuffix: true })}
                 </CardDescription>
@@ -148,7 +142,7 @@ export default function LectureHistoryPage() {
               <CardFooter>
                 <Button variant="outline" className="w-full" asChild>
                   <Link href={`/lectures/view/${lecture.$id}`}>
-                    <Eye className="mr-2 h-4 w-4" /> View Lecture
+                    <Eye className="mr-2 h-4 w-4" /> View Full Lecture
                   </Link>
                 </Button>
               </CardFooter>
