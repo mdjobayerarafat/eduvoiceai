@@ -3,39 +3,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { Youtube } from "lucide-react";
 import type { TopicLectureOutput } from "@/ai/flows/topic-lecture-flow";
+import ReactMarkdown from "react-markdown";
 
 interface LectureDisplayProps {
   lecture: TopicLectureOutput;
   topic: string;
 }
 
-// Basic markdown to HTML (very simplified)
-function renderMarkdown(markdown: string) {
-  // Replace newlines with <br> for simple paragraph breaks
-  // In a real app, use a library like 'marked' or 'react-markdown'
-  const html = markdown
-    .split('\n\n') // Split by double newlines for paragraphs
-    .map(paragraph => `<p class="mb-4">${paragraph.replace(/\n/g, '<br />')}</p>`)
-    .join('');
-  return { __html: html };
-}
-
 function getYouTubeVideoId(url: string): string | null {
   if (!url) return null;
-  // Regex to extract video ID from various YouTube URL formats
-  // Handles:
-  // - https://www.youtube.com/watch?v=VIDEO_ID
-  // - https://youtu.be/VIDEO_ID
-  // - https://www.youtube.com/embed/VIDEO_ID
-  // - https://www.youtube.com/v/VIDEO_ID
-  // - https://www.youtube.com/user/channelname#p/a/u/1/VIDEO_ID
-  // - https://music.youtube.com/watch?v=VIDEO_ID
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
   const match = url.match(regExp);
   if (match && match[2] && match[2].length === 11) {
     return match[2];
   }
-  // Fallback: if the provided link is already just an 11-character ID
   if (url.length === 11 && /^[a-zA-Z0-9_-]+$/.test(url)) {
     return url;
   }
@@ -53,26 +34,30 @@ export function LectureDisplay({ lecture, topic }: LectureDisplayProps) {
       <CardContent className="space-y-6">
         <div>
           <h3 className="font-headline text-xl font-semibold mb-2 text-primary">Summary</h3>
-          <div className="prose prose-sm max-w-none text-foreground" dangerouslySetInnerHTML={renderMarkdown(lecture.summary)} />
+          <article className="prose prose-base lg:prose-lg max-w-none text-foreground">
+            <ReactMarkdown>{lecture.summary}</ReactMarkdown>
+          </article>
         </div>
         <Separator />
         <div>
           <h3 className="font-headline text-xl font-semibold mb-2 text-primary">Lecture Content</h3>
-          <div className="prose prose-sm max-w-none text-foreground" dangerouslySetInnerHTML={renderMarkdown(lecture.lectureContent)} />
+           <article className="prose prose-base lg:prose-lg max-w-none text-foreground">
+            <ReactMarkdown>{lecture.lectureContent}</ReactMarkdown>
+          </article>
         </div>
         {lecture.youtubeVideoLinks && lecture.youtubeVideoLinks.length > 0 && (
           <>
             <Separator />
             <div>
               <h3 className="font-headline text-xl font-semibold mb-3 text-primary">Relevant YouTube Videos</h3>
-              <ul className="space-y-3">
+              <ul className="space-y-4">
                 {lecture.youtubeVideoLinks.map((link, index) => {
                   const videoId = getYouTubeVideoId(link);
 
                   return (
                     <li key={index} className="group">
                       {videoId ? (
-                        <div className="aspect-video rounded-lg overflow-hidden border">
+                        <div className="aspect-video rounded-lg overflow-hidden border shadow-md">
                           <iframe
                             width="100%"
                             height="100%"
@@ -87,9 +72,9 @@ export function LectureDisplay({ lecture, topic }: LectureDisplayProps) {
                           href={link}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-accent hover:underline flex items-center"
+                          className="text-accent hover:underline flex items-center p-2 border rounded-md hover:bg-muted"
                         >
-                          <Youtube className="mr-2 h-5 w-5" /> Watch Video {index + 1} (Link)
+                          <Youtube className="mr-2 h-5 w-5" /> Watch Video {index + 1} (Link may be invalid or for a non-embeddable video)
                         </a>
                       )}
                     </li>
@@ -103,4 +88,3 @@ export function LectureDisplay({ lecture, topic }: LectureDisplayProps) {
     </Card>
   );
 }
-
