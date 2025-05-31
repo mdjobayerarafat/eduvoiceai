@@ -6,31 +6,35 @@ import type { NextPage } from "next";
 import Image from "next/image";
 import { InterviewSetup } from "@/components/interviews/InterviewSetup";
 import { Separator } from "@/components/ui/separator";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
 import { getFirstInterviewQuestion } from "@/ai/flows/mock-interview-flow";
 import type { InterviewConfigInput, FirstQuestionOutput } from "@/ai/flows/mock-interview-flow";
 import { getFeedbackAndNextQuestion } from "@/ai/flows/interview-progression-flow";
 import type { InterviewProgressionInput, InterviewProgressionOutput } from "@/ai/flows/interview-progression-flow";
+import { getFinalInterviewFeedback } from "@/ai/flows/final-interview-feedback-flow";
+import type { FinalInterviewFeedbackInput, FinalInterviewFeedbackOutput } from "@/ai/flows/final-interview-feedback-flow";
+
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, AlertTriangle, Video, VideoOff, MessageSquare, Sparkles, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { Loader2, AlertTriangle, Video, VideoOff, MessageSquare, Sparkles, Mic, MicOff, Volume2, VolumeX, TimerIcon, StopCircle, ThumbsUp, ThumbsDown, Award } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-type InterviewStage = "setup" | "first_question_loading" | "interviewing" | "next_question_loading" | "error";
+type InterviewStage = "setup" | "first_question_loading" | "interviewing" | "next_question_loading" | "final_feedback_loading" | "final_feedback_display" | "error";
 
 interface InterviewExchange {
   question: string;
   answer: string;
-  feedback?: string;
+  feedback?: string; // Per-turn feedback
 }
 
-// Check for SpeechRecognition and SpeechSynthesis API
 const SpeechRecognition = (typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)) || null;
 const speechSynthesis = (typeof window !== 'undefined' && window.speechSynthesis) || null;
 
+const INTERVIEW_DURATION_MINUTES = 10;
 
 const MockInterviewPage: NextPage = () => {
   const [stage, setStage] = useState<InterviewStage>("setup");
@@ -50,11 +54,15 @@ const MockInterviewPage: NextPage = () => {
   const [isTTSEnabled, setIsTTSEnabled] = useState(true);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
+  const [remainingTime, setRemainingTime] = useState(INTERVIEW_DURATION_MINUTES * 60);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [finalFeedback, setFinalFeedback] = useState<FinalInterviewFeedbackOutput | null>(null);
+
   const speakText = useCallback((text: string) => {
     if (!speechSynthesis || !isTTSEnabled || !text) return;
     try {
       if (speechSynthesis.speaking) {
-        speechSynthesis.cancel(); // Cancel any ongoing speech
+        speechSynthesis.cancel();
       }
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.onstart = () => setIsAISpeaking(true);
@@ -71,6 +79,41 @@ const MockInterviewPage: NextPage = () => {
       toast({ title: "Speech Error", description: "Could not play AI voice.", variant: "destructive"});
     }
   }, [isTTSEnabled, toast]);
+
+  const startTimer = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setRemainingTime(INTERVIEW_DURATION_MINUTES * 60);
+    timerRef.current = setInterval(() => {
+      setRemainingTime(prevTime => {
+        if (prevTime <= 1) {
+          clearInterval(timerRef.current!);
+          handleEndInterview("timer");
+          return 0;
+        }
+        return prevTime - 1;
+      });
+    }, 1000);
+  }, []);
+
+  const stopTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => { // Cleanup timer on unmount
+      stopTimer();
+      if (speechSynthesis && speechSynthesis.speaking) {
+        speechSynthesis.cancel();
+      }
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, [stopTimer]);
+
 
   useEffect(() => {
     if (!SpeechRecognition) {
@@ -97,19 +140,16 @@ const MockInterviewPage: NextPage = () => {
         } else if (event.error === 'not-allowed') {
             errorMsg = "Microphone access denied. Please allow microphone access in your browser settings.";
         } else if (event.error === 'network') {
-            errorMsg = "Network error. Speech recognition requires an internet connection.";
+            errorMsg = "Network error. Speech recognition may require an internet connection.";
         }
         toast({ title: "Voice Input Error", description: errorMsg, variant: "destructive" });
       };
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let finalTranscript = "";
-        let interimTranscript = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
             finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
           }
         }
         
@@ -119,21 +159,12 @@ const MockInterviewPage: NextPage = () => {
       };
       recognitionRef.current = recognition;
     }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-      }
-      if (speechSynthesis && speechSynthesis.speaking) {
-        speechSynthesis.cancel();
-      }
-    };
   }, [toast]);
 
 
   useEffect(() => {
     const manageCamera = async () => {
-      if (stage === "interviewing" || stage === "next_question_loading") {
+      if (stage === "interviewing" || stage === "next_question_loading" || stage === "final_feedback_loading") {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -158,7 +189,7 @@ const MockInterviewPage: NextPage = () => {
             description: 'Your browser does not support camera access.',
           });
         }
-      } else {
+      } else if (stage !== "final_feedback_display") { // Keep camera on during feedback loading but turn off after display or on setup/error
         if (videoRef.current && videoRef.current.srcObject) {
           const stream = videoRef.current.srcObject as MediaStream;
           stream.getTracks().forEach(track => track.stop());
@@ -168,32 +199,42 @@ const MockInterviewPage: NextPage = () => {
     };
 
     manageCamera();
-
-    return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
-        videoRef.current.srcObject = null;
-      }
-    };
+    // Don't stop camera on unmount here, handled by stage changes and main cleanup
   }, [stage, toast]);
 
   useEffect(() => {
+    if (stage === "final_feedback_display" || stage === "error" || stage === "setup") {
+        stopTimer();
+        if (videoRef.current && videoRef.current.srcObject) {
+             const stream = videoRef.current.srcObject as MediaStream;
+             stream.getTracks().forEach(track => track.stop());
+             videoRef.current.srcObject = null;
+        }
+    }
+  }, [stage, stopTimer]);
+
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [interviewHistory, currentQuestion]);
+  }, [interviewHistory, currentQuestion, finalFeedback]);
 
   const handleSetupComplete = async (data: InterviewConfigInput) => {
     setStage("first_question_loading");
     setError(null);
     setInterviewConfig(data); 
+    setInterviewHistory([]);
+    setFinalFeedback(null);
+    setCurrentQuestion(null);
+    setUserAnswer("");
     try {
       const result: FirstQuestionOutput = await getFirstInterviewQuestion(data);
       setCurrentQuestion(result.firstQuestion);
       setStage("interviewing");
+      startTimer();
       speakText(result.firstQuestion);
       toast({
         title: "Interview Started!",
-        description: "The first question is ready.",
+        description: "The first question is ready. The timer has begun.",
       });
     } catch (err) {
       console.error("Error getting first question:", err);
@@ -226,9 +267,12 @@ const MockInterviewPage: NextPage = () => {
          console.error("Error starting recognition:", e);
          setIsListening(false); 
          let errorMsg = "Could not start voice input. ";
-         if (e instanceof DOMException) {
+         // @ts-ignore
+         if (e && e.name) { // DOMException has a 'name' property
+            // @ts-ignore
             if (e.name === 'NotAllowedError' || e.name === 'SecurityError') {
                 errorMsg += "Microphone access was denied. Please allow microphone access in your browser settings and refresh the page.";
+            // @ts-ignore
             } else if (e.name === 'InvalidStateError') {
                 errorMsg += "Speech recognition is already active or in an invalid state. Please try again.";
             } else {
@@ -279,33 +323,41 @@ const MockInterviewPage: NextPage = () => {
       if (isTTSEnabled && result.feedbackOnLastAnswer) {
         speakText(result.feedbackOnLastAnswer);
         
-        const feedbackDurationEstimate = result.feedbackOnLastAnswer.length * 60; 
+        // Simple delay to allow feedback to be spoken before next question
+        const feedbackDurationEstimate = result.feedbackOnLastAnswer.length * 70; // Rough estimate
         setTimeout(() => {
             if (result.nextQuestion) {
                 setCurrentQuestion(result.nextQuestion);
                 if (isTTSEnabled) speakText(result.nextQuestion);
+            } else {
+                // No next question, consider ending the interview or special handling
+                setCurrentQuestion(null);
+                toast({ title: "Interview Concluding", description: "No more questions from the AI for now."});
+                handleEndInterview("no_more_questions");
             }
-        }, isAISpeaking ? feedbackDurationEstimate + 200 : 0); 
+            setStage("interviewing");
+        }, isAISpeaking ? feedbackDurationEstimate + 500 : (result.feedbackOnLastAnswer ? 500 : 0) ); 
       } else {
          if (result.nextQuestion) {
             setCurrentQuestion(result.nextQuestion);
             if (isTTSEnabled) speakText(result.nextQuestion);
          } else {
-            // If no next question, but there was feedback, ensure stage is set correctly
-             setCurrentQuestion(null); // No more questions
+            setCurrentQuestion(null);
+            toast({ title: "Interview Concluding", description: "No more questions from the AI for now."});
+            handleEndInterview("no_more_questions");
          }
+         setStage("interviewing");
       }
-
-
       setUserAnswer("");
-      setStage("interviewing");
-      toast({
-        title: "Next Question Ready",
-        description: "Feedback on your previous answer is available.",
-      });
+      if (result.nextQuestion) {
+        toast({
+          title: "Next Question Ready",
+          description: "Feedback on your previous answer is available.",
+        });
+      }
     } catch (err) {
       console.error("Error getting next question/feedback:", err);
-      setInterviewHistory(prev => [...prev, currentExchange]); // Add exchange even if AI call fails to show user's attempt
+      setInterviewHistory(prev => [...prev, currentExchange]);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to get next question: ${errorMessage}`);
       setStage("error"); 
@@ -317,6 +369,53 @@ const MockInterviewPage: NextPage = () => {
       setIsAISpeaking(false);
     }
   };
+
+  const handleEndInterview = async (reason: "timer" | "manual" | "no_more_questions") => {
+    stopTimer();
+    setStage("final_feedback_loading");
+    if (isListening && recognitionRef.current) recognitionRef.current.stop();
+    if (speechSynthesis?.speaking) speechSynthesis.cancel();
+    setIsAISpeaking(false);
+
+    let endMessage = "Interview ended. ";
+    if (reason === "timer") endMessage += "Time's up!";
+    if (reason === "manual") endMessage += "You ended the interview.";
+    if (reason === "no_more_questions") endMessage += "The AI has no more questions.";
+
+    toast({
+        title: "Interview Over",
+        description: `${endMessage} Generating final feedback...`,
+    });
+
+    if (!interviewConfig || interviewHistory.length === 0) {
+        toast({ title: "Not Enough Data", description: "No interview data to provide feedback on.", variant: "destructive" });
+        setStage("setup"); // Go back to setup
+        return;
+    }
+
+    try {
+      const input: FinalInterviewFeedbackInput = {
+        resume: interviewConfig.resume,
+        jobDescription: interviewConfig.jobDescription,
+        fullInterviewHistory: interviewHistory.map(h => ({ question: h.question, answer: h.answer })), // Only Q&A needed
+      };
+      const result = await getFinalInterviewFeedback(input);
+      setFinalFeedback(result);
+      setStage("final_feedback_display");
+      speakText(`Your interview is complete. Here is your feedback. You scored ${result.overallScore} out of 100. ${result.overallSummary}`);
+    } catch (err) {
+      console.error("Error getting final feedback:", err);
+      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
+      setError(`Failed to get final feedback: ${errorMessage}`);
+      setStage("error");
+      toast({
+        title: "Error Getting Final Feedback",
+        description: "Could not generate the final interview report.",
+        variant: "destructive",
+      });
+    }
+  };
+
 
   const toggleTTS = () => {
     setIsTTSEnabled(prev => {
@@ -332,20 +431,47 @@ const MockInterviewPage: NextPage = () => {
     });
   };
 
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleRestart = () => {
+    stopTimer();
+    setStage("setup");
+    setError(null);
+    setInterviewConfig(null);
+    setInterviewHistory([]);
+    setCurrentQuestion(null);
+    setUserAnswer("");
+    setIsAISpeaking(false);
+    setIsListening(false);
+    setFinalFeedback(null);
+    setRemainingTime(INTERVIEW_DURATION_MINUTES * 60);
+     if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setHasCameraPermission(null); // Reset camera permission status
+  };
+
   return (
-    <div className="space-y-6 flex flex-col h-[calc(100vh-120px)]"> {/* Adjust height based on header/paddings */}
+    <div className="space-y-6 flex flex-col h-[calc(100vh-120px)]">
       <div>
         <div className="flex justify-between items-center">
           <div>
             <h1 className="font-headline text-3xl font-semibold">Mock Interview</h1>
             <p className="text-muted-foreground mt-1">
               {stage === "setup" && "Practice your interviewing skills. Provide the job details and your resume."}
-              {(stage === "first_question_loading" || stage === "next_question_loading") && "Processing..."}
+              {(stage === "first_question_loading" || stage === "next_question_loading" || stage === "final_feedback_loading") && "Processing..."}
               {stage === "interviewing" && "You're live! Answer the question below."}
+              {stage === "final_feedback_display" && "Interview Complete. Review your feedback."}
               {stage === "error" && "An error occurred."}
             </p>
           </div>
-          {(stage === "interviewing" || stage === "next_question_loading") && (
+          {(stage === "interviewing" || stage === "next_question_loading" || stage === "final_feedback_display") && (
              <Button onClick={toggleTTS} variant="outline" size="icon" title={isTTSEnabled ? "Mute AI Voice" : "Unmute AI Voice"}>
                 {isTTSEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
               </Button>
@@ -358,7 +484,7 @@ const MockInterviewPage: NextPage = () => {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error} Please <Button variant="link" className="p-0 h-auto" onClick={() => { setStage("setup"); setError(null); setInterviewConfig(null); setInterviewHistory([]); setCurrentQuestion(null); setUserAnswer(""); setIsAISpeaking(false); setIsListening(false); }}>restart setup</Button>.</AlertDescription>
+          <AlertDescription>{error} Please <Button variant="link" className="p-0 h-auto" onClick={handleRestart}>restart setup</Button>.</AlertDescription>
         </Alert>
       )}
 
@@ -367,7 +493,7 @@ const MockInterviewPage: NextPage = () => {
           <CardHeader>
             <CardTitle className="font-headline text-2xl">Interview Setup</CardTitle>
             <CardDescription>
-              Fill in the details below to configure your mock interview session.
+              Fill in the details below to configure your mock interview session ({INTERVIEW_DURATION_MINUTES} minutes).
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -379,11 +505,13 @@ const MockInterviewPage: NextPage = () => {
         </Card>
       )}
 
-      {(stage === "first_question_loading" || stage === "next_question_loading") && (
+      {(stage === "first_question_loading" || stage === "next_question_loading" || stage === "final_feedback_loading") && (
         <div className="text-center py-12 flex-grow flex flex-col items-center justify-center">
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-muted-foreground">
-            {stage === "first_question_loading" ? "Generating the first question..." : "Getting feedback and next question..."}
+            {stage === "first_question_loading" && "Generating the first question..."}
+            {stage === "next_question_loading" && "Getting feedback and next question..."}
+            {stage === "final_feedback_loading" && "Generating your final interview report..."}
           </p>
         </div>
       )}
@@ -391,7 +519,19 @@ const MockInterviewPage: NextPage = () => {
       {(stage === "interviewing" || stage === "next_question_loading") && (currentQuestion || interviewHistory.length > 0) && (
         <div className="flex-grow flex flex-col md:flex-row gap-4 overflow-hidden">
           <div className="w-full md:w-1/3 lg:w-1/4 space-y-2 flex flex-col">
-             <CardTitle className="font-headline text-lg flex items-center px-1">
+            <Card>
+              <CardHeader className="pb-2">
+                 <CardTitle className="font-headline text-lg flex items-center">
+                  <TimerIcon className="mr-2 text-primary" /> Timer
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-mono font-semibold text-center">{formatTime(remainingTime)}</p>
+                <Progress value={(remainingTime / (INTERVIEW_DURATION_MINUTES * 60)) * 100} className="mt-2 h-2" />
+              </CardContent>
+            </Card>
+            
+             <CardTitle className="font-headline text-lg flex items-center px-1 pt-2">
               {hasCameraPermission ? <Video className="mr-2 text-green-500" /> : <VideoOff className="mr-2 text-red-500" />}
               Your Camera
             </CardTitle>
@@ -403,7 +543,7 @@ const MockInterviewPage: NextPage = () => {
                 <AlertTriangle className="h-3 w-3" />
                 <AlertTitle className="text-sm">Camera Issue</AlertTitle>
                 <AlertDescription className="text-xs">
-                  Could not access camera. Please grant permissions in your browser settings and refresh.
+                  Could not access camera. Please grant permissions and refresh.
                 </AlertDescription>
               </Alert>
             )}
@@ -416,6 +556,9 @@ const MockInterviewPage: NextPage = () => {
                     </AlertDescription>
                  </Alert>
             )}
+             <Button onClick={() => handleEndInterview("manual")} variant="outline" className="w-full mt-auto" disabled={stage === "next_question_loading"}>
+                <StopCircle className="mr-2 h-4 w-4" /> End Interview Early
+            </Button>
           </div>
 
           <Card className="flex-grow flex flex-col overflow-hidden">
@@ -471,7 +614,7 @@ const MockInterviewPage: NextPage = () => {
                   <div className="flex items-center gap-2">
                     <Textarea 
                       placeholder={isListening ? "Listening... Speak clearly." : "Type or click mic to speak your answer..."}
-                      rows={4} 
+                      rows={3} 
                       value={userAnswer}
                       onChange={(e) => setUserAnswer(e.target.value)}
                       className="text-base flex-grow"
@@ -505,8 +648,65 @@ const MockInterviewPage: NextPage = () => {
           </Card>
         </div>
       )}
+
+      {stage === "final_feedback_display" && finalFeedback && (
+        <Card className="flex-grow flex flex-col overflow-hidden">
+          <CardHeader>
+            <div className="flex justify-between items-center">
+                <CardTitle className="font-headline text-2xl flex items-center">
+                    <Award className="mr-2 text-primary h-7 w-7" /> Interview Report
+                </CardTitle>
+                <Button onClick={handleRestart} variant="outline">
+                    Start New Interview
+                </Button>
+            </div>
+            <CardDescription>Here's your overall performance and detailed feedback.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex-grow overflow-y-auto p-4 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                <Card className="p-4 text-center col-span-1 md:col-span-1">
+                    <p className="text-sm text-muted-foreground">Overall Score</p>
+                    <p className="text-5xl font-bold text-primary">{finalFeedback.overallScore}<span className="text-2xl text-muted-foreground">/100</span></p>
+                </Card>
+                <Card className="p-4 col-span-1 md:col-span-2">
+                     <h3 className="font-headline text-lg font-semibold mb-2 flex items-center">
+                        {finalFeedback.overallScore >= 80 ? <ThumbsUp className="mr-2 text-green-500" /> : finalFeedback.overallScore >=50 ? <Sparkles className="mr-2 text-yellow-500" /> : <ThumbsDown className="mr-2 text-red-500" />}
+                        Overall Summary
+                    </h3>
+                    <p className="text-sm whitespace-pre-wrap">{finalFeedback.overallSummary}</p>
+                </Card>
+            </div>
+            
+            <Separator />
+
+            <div>
+                <h3 className="font-headline text-xl font-semibold mb-3">Detailed Question Feedback</h3>
+                <ScrollArea className="max-h-[400px] pr-3">
+                    <div className="space-y-4">
+                    {finalFeedback.detailedFeedback.map((item, index) => (
+                        <Card key={index} className="p-4">
+                            <p className="font-semibold text-primary">Question {index + 1}:</p>
+                            <p className="text-sm text-muted-foreground mb-1 whitespace-pre-wrap">{item.question}</p>
+                            
+                            <p className="font-semibold mt-2">Your Answer:</p>
+                            <p className="text-sm mb-2 p-2 bg-primary/5 rounded whitespace-pre-wrap">{item.answer || <span className="italic text-muted-foreground">No answer provided.</span>}</p>
+                            
+                            <p className="font-semibold mt-2 flex items-center"><Sparkles className="mr-1 h-4 w-4 text-accent" />Specific Feedback:</p>
+                            <p className="text-sm p-2 bg-secondary/30 rounded whitespace-pre-wrap">{item.specificFeedback}</p>
+                        </Card>
+                    ))}
+                    </div>
+                </ScrollArea>
+            </div>
+            <div ref={messagesEndRef} />
+          </CardContent>
+        </Card>
+      )}
+
     </div>
   );
 }
 
 export default MockInterviewPage;
+
+    
