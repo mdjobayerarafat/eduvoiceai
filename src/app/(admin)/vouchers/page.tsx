@@ -120,8 +120,8 @@ export default function ManageVouchersPage() {
         fullNewVoucher,
         [
           Permission.read(Role.any()), // Or Role.users() if only logged-in users can see/use vouchers
-          Permission.update(Role.team("admins")), // Assuming an "admins" team
-          Permission.delete(Role.team("admins"))
+          Permission.update(Role.label("admin")), // Use label for admin permissions
+          Permission.delete(Role.label("admin"))  // Use label for admin permissions
         ]
       );
       
@@ -132,7 +132,7 @@ export default function ManageVouchersPage() {
       console.error("Error creating voucher:", err);
       let specificError = "Failed to create voucher.";
        if (err instanceof AppwriteException) {
-            specificError = `Appwrite Error: ${err.message}. Ensure 'vouchers' collection exists and has correct permissions.`;
+            specificError = `Appwrite Error: ${err.message}. Ensure 'vouchers' collection exists and has correct permissions. Also check that 'label:admin' is a valid permission target for your user.`;
         } else if (err instanceof Error) {
             specificError = err.message;
         }
@@ -317,3 +317,5 @@ export default function ManageVouchersPage() {
     </div>
   );
 }
+
+    
