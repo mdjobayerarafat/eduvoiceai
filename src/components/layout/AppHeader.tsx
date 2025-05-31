@@ -102,7 +102,7 @@ export function AppHeader() {
       <div className="flex items-center gap-2 md:ml-auto md:gap-2 lg:gap-4">
         {!isLoading && isAdmin && ( // Only show if not loading and isAdmin
           <Button variant="outline" size="sm" asChild className="hidden md:flex bg-primary/10 hover:bg-primary/20 border-primary/30 text-primary hover:text-primary">
-            <Link href="/admin/dashboard">
+            <Link href="/admin/admindashboard">
               <ShieldAlert className="mr-2 h-4 w-4" />
               Admin Area
             </Link>
@@ -135,7 +135,7 @@ export function AppHeader() {
                 <>
                   <DropdownMenuSeparator />
                    <Link
-                    href="/admin/dashboard"
+                    href="/admin/admindashboard"
                     className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary ${pathname.startsWith('/admin') ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground font-medium"}`}
                   >
                     <ShieldAlert className="h-5 w-5" />
@@ -166,7 +166,7 @@ export function AppHeader() {
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/admin/dashboard" className="font-medium text-primary">
+                  <Link href="/admin/admindashboard" className="font-medium text-primary">
                     <ShieldAlert className="mr-2 h-4 w-4" />
                     Admin Dashboard
                   </Link>
@@ -184,3 +184,4 @@ export function AppHeader() {
     </header>
   );
 }
+

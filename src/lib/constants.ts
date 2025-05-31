@@ -24,7 +24,7 @@ export const SETTINGS_NAV_ITEMS: NavItem[] = [
 ];
 
 export const ADMIN_NAV_ITEMS: NavItem[] = [
-  { label: 'Admin Dashboard', href: '/admin/dashboard', icon: ShieldAlert, matchPaths: ['/admin/dashboard'] },
+  { label: 'Admin Dashboard', href: '/admin/admindashboard', icon: ShieldAlert, matchPaths: ['/admin/admindashboard'] },
   { label: 'Manage Users', href: '/admin/users', icon: Users, matchPaths: ['/admin/users'] },
   { label: 'Manage Vouchers', href: '/admin/vouchers', icon: Ticket, matchPaths: ['/admin/vouchers'] },
 ];
@@ -34,3 +34,4 @@ export const USER_NAV_ITEMS = [
   { label: 'Settings', href: '/settings/api-keys' },
   // Logout will be handled by a function in AppHeader
 ];
+

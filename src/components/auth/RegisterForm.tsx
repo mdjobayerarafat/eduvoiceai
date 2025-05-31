@@ -44,13 +44,14 @@ export function RegisterForm() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
+ if (typeof window !== 'undefined') {
       await account.create('unique()', values.email, values.password, values.username);
-      
       toast({
         title: "Registration Successful",
         description: "Your account has been created. You are now logged in.",
       });
       router.push("/dashboard"); 
+ }
 
     } catch (error: any) {
       console.error("Registration error object:", error); // Log the actual error object

@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Ticket, PlusCircle, MoreHorizontal, Edit, Trash2, Percent, CalendarDays, XCircle, CheckCircle } from "lucide-react";
-import { DatePicker } from "@/components/ui/date-picker"; // Assuming a simple date picker component exists or will be created
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";

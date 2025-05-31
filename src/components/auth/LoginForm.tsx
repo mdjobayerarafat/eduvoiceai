@@ -43,11 +43,19 @@ export function LoginForm() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
       await account.createEmailPasswordSession(values.email, values.password);
-      toast({
-        title: "Login Successful",
-        description: "Welcome back!",
-      });
-      router.push("/dashboard");
+      // Ensure client-side execution before accessing window-dependent objects like router
+      if (typeof window !== 'undefined') {
+        const user = await account.get();
+        toast({
+          title: "Login Successful",
+          description: "Welcome back!",
+        });
+        if (user.labels.includes("admin")) {
+          router.push("/admin/admindashboard"); // Navigate to admin dashboard
+        } else {
+          router.push("/dashboard");
+        }
+      }
     } catch (error: any) {
       let errorMessage = "Invalid email or password.";
       if (error instanceof AppwriteException) {
