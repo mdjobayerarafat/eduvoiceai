@@ -50,8 +50,8 @@ export function LoginForm() {
           title: "Login Successful",
           description: "Welcome back!",
         });
-        if (user.labels.includes("admin")) {
-          router.push("/admin/admindashboard"); // Navigate to admin dashboard
+        if (user.labels && user.labels.includes("admin")) {
+          router.push("/admindashboard"); // Navigate to admin dashboard
         } else {
           router.push("/dashboard");
         }

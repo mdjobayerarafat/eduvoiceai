@@ -38,7 +38,7 @@ export default function DashboardPage() {
     const fetchDashboardData = async () => {
       setIsLoadingLectures(true);
       setIsLoadingInterviewReports(true);
-      setIsAdmin(false); // Reset admin status on fetch
+      setIsAdmin(false); 
       
       try {
         const user = await account.get();
@@ -46,14 +46,15 @@ export default function DashboardPage() {
           router.push("/login");
           return;
         }
-        const userId = user.$id;
 
-        // Check if the user has the 'admin' label in Appwrite
-        if (user?.labels?.includes('admin')) {
-          setIsAdmin(true);
-        } else {
-          setIsAdmin(false);
+        // If user is admin, redirect them to the admin dashboard from the user dashboard
+        if (user.labels && user.labels.includes('admin')) {
+          router.push('/admindashboard');
+          return; // Stop further processing for this page if admin
         }
+        
+        // This will only run for non-admin users now
+        const userId = user.$id;
 
         // Fetch Recent Lectures
         if (APPWRITE_DATABASE_ID && LECTURES_COLLECTION_ID) {
@@ -130,18 +131,27 @@ export default function DashboardPage() {
           toast({ title: "Session Expired", description: "Please log in again.", variant: "default" });
           router.push('/login');
         } else {
+          // This part might not be reached if an admin is redirected earlier,
+          // but kept for general error handling for non-admins.
           toast({ title: "Error Loading Dashboard", description: "Could not load dashboard data. Please try again later.", variant: "destructive" });
           setRecentLectures([]);
           setRecentInterviewReports([]);
         }
         setIsLoadingLectures(false);
         setIsLoadingInterviewReports(false);
-        setIsAdmin(false);
+        setIsAdmin(false); // Ensure isAdmin is false on error
       }
     };
 
     fetchDashboardData();
   }, [router, toast]);
+
+  // The UI for admin panel section on this page is effectively removed because admins will be redirected.
+  // If an admin is NOT redirected (e.g., error before redirect), they won't see the admin panel here.
+  // The `isAdmin` state for UI purposes is largely superseded by the redirect.
+  // We could remove the `isAdmin` state and related UI section entirely from this page
+  // if we're confident the redirect will always occur for admins.
+  // For now, leaving the UI structure as is, though it won't be shown to admins if redirect works.
 
   return (
     <div className="space-y-6">
@@ -157,13 +167,18 @@ export default function DashboardPage() {
         <NavigationButtons />
       </div>
 
+      {/* This section will not be visible to admins if the redirect above works correctly. */}
       {isAdmin && (
         <>
           <Separator />
           <div>
             <h2 className="font-headline text-2xl font-semibold mb-4 flex items-center">
-              <ShieldAlert className="mr-2 h-6 w-6 text-primary" /> Admin Panel
+              <ShieldAlert className="mr-2 h-6 w-6 text-primary" /> Admin Panel (Access from Header/Sidebar)
             </h2>
+             <p className="text-sm text-muted-foreground mb-4">
+                As an admin, you can access the admin panel directly using the links in the header or sidebar.
+                You have been redirected from the main user dashboard to the admin dashboard.
+            </p>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {ADMIN_NAV_ITEMS.map((item) => (
                 <Link href={item.href} key={item.label} legacyBehavior>
@@ -190,9 +205,6 @@ export default function DashboardPage() {
                 </Link>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-3">
-                Note: For admin access to function, ensure the logged-in user has the 'admin' label in Appwrite.
-            </p>
           </div>
         </>
       )}
