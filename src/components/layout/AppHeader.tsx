@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BookHeart, Menu, Settings as SettingsIcon, UserCircle, LogOut } from "lucide-react";
+import { BrainCircuit, Menu, Settings as SettingsIcon, UserCircle, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -41,7 +41,7 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-card px-4 md:px-6 shrink-0">
       <Link href="/dashboard" className="flex items-center gap-2 text-lg font-semibold md:text-base mr-auto md:mr-0">
-        <BookHeart className="h-6 w-6 text-primary" />
+        <BrainCircuit className="h-6 w-6 text-primary" />
         <span className="sr-only">EduVoice AI</span>
       </Link>
       
@@ -68,7 +68,7 @@ export function AppHeader() {
           <SheetContent side="left" className="bg-card">
             <nav className="grid gap-6 text-lg font-medium mt-8">
               <Link href="/dashboard" className="flex items-center gap-2 text-lg font-semibold mb-4">
-                <BookHeart className="h-6 w-6 text-primary" />
+                <BrainCircuit className="h-6 w-6 text-primary" />
                 <span>EduVoice AI</span>
               </Link>
               {APP_NAV_ITEMS.map((item) => (

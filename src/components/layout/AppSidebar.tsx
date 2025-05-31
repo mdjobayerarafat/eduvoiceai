@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { APP_NAV_ITEMS, SETTINGS_NAV_ITEMS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { BookHeart, Settings } from "lucide-react";
+import { BrainCircuit, Settings } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function AppSidebar() {
@@ -15,7 +15,7 @@ export function AppSidebar() {
       <ScrollArea className="h-full py-4">
         <div className="px-3 py-2">
           <Link href="/dashboard" className="flex items-center pl-1 mb-6">
-            <BookHeart className="h-7 w-7 mr-2 text-primary" />
+            <BrainCircuit className="h-7 w-7 mr-2 text-primary" />
             <h2 className="text-xl font-headline font-semibold text-primary">EduVoice AI</h2>
           </Link>
           
