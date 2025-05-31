@@ -413,13 +413,29 @@ const MockInterviewPage: NextPage = () => {
       }
 
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
-      setError(`Failed to get final feedback: ${errorMessage}`);
+      let displayErrorMessage: string;
+      let toastDescription: string;
+
+      if (err instanceof Error) {
+        if (err.message.includes("503") || err.message.toLowerCase().includes("overloaded") || err.message.toLowerCase().includes("service unavailable")) {
+          displayErrorMessage = "The AI model is currently overloaded and couldn't generate your final feedback. This is a temporary issue with the AI service. Please try again later.";
+          toastDescription = "The AI model is currently overloaded, so final feedback could not be generated. Please try again in a few moments.";
+        } else {
+          displayErrorMessage = `Failed to get final feedback: ${err.message}`;
+          toastDescription = "Could not generate the final interview report. An unexpected error occurred.";
+        }
+      } else {
+        displayErrorMessage = "Failed to get final feedback due to an unknown error.";
+        toastDescription = "Could not generate the final interview report. An unknown error occurred.";
+      }
+      
+      setError(displayErrorMessage);
       setStage("error");
       toast({
-        title: "Error Getting Final Feedback",
-        description: "Could not generate the final interview report.",
+        title: "Final Feedback Error",
+        description: toastDescription,
         variant: "destructive",
+        duration: 7000, 
       });
     }
   };
@@ -427,7 +443,7 @@ const MockInterviewPage: NextPage = () => {
   const saveInterviewReport = async (
     feedback: FinalInterviewFeedbackOutput,
     config: InterviewConfigInput,
-    history: InterviewExchange[] // This is the finalInterviewHistory
+    history: InterviewExchange[]
   ) => {
     if (!APPWRITE_DATABASE_ID || !INTERVIEWS_COLLECTION_ID) {
       toast({ title: "Configuration Error", description: "Interview saving is not configured.", variant: "destructive" });
@@ -446,7 +462,7 @@ const MockInterviewPage: NextPage = () => {
         resumeDataUri: config.resume,
         overallScore: feedback.overallScore,
         overallSummary: feedback.overallSummary,
-        detailedFeedback: JSON.stringify(feedback.detailedFeedback), // This is an array of {question, answer, specificFeedback, questionScore}
+        detailedFeedback: JSON.stringify(feedback.detailedFeedback), 
         rawInterviewHistory: JSON.stringify(history.map(h => ({ question: h.question, answer: h.answer } as InterviewExchangeForReport))),
         closingRemark: feedback.closingRemark || "",
       };
@@ -809,3 +825,5 @@ const MockInterviewPage: NextPage = () => {
 
 export default MockInterviewPage;
 
+
+    
