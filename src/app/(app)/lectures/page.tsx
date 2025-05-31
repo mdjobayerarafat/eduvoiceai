@@ -8,6 +8,7 @@ import { generateTopicLecture } from "@/ai/flows/topic-lecture-flow";
 import type { TopicLectureInput, TopicLectureOutput } from "@/ai/flows/topic-lecture-flow";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Terminal, Save } from "lucide-react";
 import { account, databases, ID, Permission, Role, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID } from "@/lib/appwrite";
 import { AppwriteException, Models } from "appwrite";
