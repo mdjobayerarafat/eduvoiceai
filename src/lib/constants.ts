@@ -1,5 +1,6 @@
+
 import type { LucideIcon } from 'lucide-react';
-import { Home, BookOpen, Mic, HelpCircle, Languages, Smile, Settings, CreditCard, Key, Users, Ticket, LayoutDashboard } from 'lucide-react';
+import { Home, BookOpen, Mic, HelpCircle, Languages, Smile, Settings, CreditCard, Key, Users, Ticket, LayoutDashboard, ShieldAlert } from 'lucide-react';
 
 export interface NavItem {
   label: string;
@@ -10,8 +11,8 @@ export interface NavItem {
 
 export const APP_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: Home },
-  { label: 'Topic Lecture', href: '/lectures', icon: BookOpen, matchPaths: ['/lectures'] },
-  { label: 'Mock Interview', href: '/interviews', icon: Mic, matchPaths: ['/interviews'] },
+  { label: 'Topic Lecture', href: '/lectures', icon: BookOpen, matchPaths: ['/lectures', '/lectures/history', '/lectures/view'] },
+  { label: 'Mock Interview', href: '/interviews', icon: Mic, matchPaths: ['/interviews', '/interviews/history', '/interviews/report'] },
   { label: 'Q&A Prep', href: '/qa-prep', icon: HelpCircle, matchPaths: ['/qa-prep'] },
   { label: 'Learn Language', href: '/language', icon: Languages, matchPaths: ['/language'] },
   { label: 'Meditation', href: '/meditation', icon: Smile, matchPaths: ['/meditation'] },
@@ -23,13 +24,13 @@ export const SETTINGS_NAV_ITEMS: NavItem[] = [
 ];
 
 export const ADMIN_NAV_ITEMS: NavItem[] = [
-  { label: 'Overview', href: '/admin/dashboard', icon: LayoutDashboard },
-  { label: 'Users', href: '/admin/users', icon: Users },
-  { label: 'Vouchers', href: '/admin/vouchers', icon: Ticket },
+  { label: 'Admin Dashboard', href: '/admin/dashboard', icon: ShieldAlert, matchPaths: ['/admin/dashboard'] },
+  { label: 'Manage Users', href: '/admin/users', icon: Users, matchPaths: ['/admin/users'] },
+  { label: 'Manage Vouchers', href: '/admin/vouchers', icon: Ticket, matchPaths: ['/admin/vouchers'] },
 ];
 
 export const USER_NAV_ITEMS = [
-  { label: 'Profile', href: '/profile' }, // Placeholder
+  { label: 'Profile', href: '/profile' }, 
   { label: 'Settings', href: '/settings/api-keys' },
-  // Logout will be handled by a function
+  // Logout will be handled by a function in AppHeader
 ];
