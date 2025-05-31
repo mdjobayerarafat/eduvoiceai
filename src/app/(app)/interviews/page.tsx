@@ -28,7 +28,7 @@ type InterviewStage = "setup" | "first_question_loading" | "interviewing" | "nex
 interface InterviewExchange {
   question: string;
   answer: string;
-  feedback?: string; // Per-turn feedback
+  feedback?: string; // Per-turn feedback, now mostly unused during active interview
 }
 
 const SpeechRecognition = (typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)) || null;
@@ -73,7 +73,6 @@ const MockInterviewPage: NextPage = () => {
       };
       speechSynthesis.speak(utterance);
     } catch (e) {
-      console.error("Error in speakText:", e);
       setIsAISpeaking(false);
       toast({ title: "Speech Error", description: "Could not play AI voice.", variant: "destructive"});
     }
@@ -172,7 +171,6 @@ const MockInterviewPage: NextPage = () => {
               videoRef.current.srcObject = stream;
             }
           } catch (err) {
-            console.error('Error accessing camera:', err);
             setHasCameraPermission(false);
              toast({
               variant: 'destructive',
@@ -198,7 +196,6 @@ const MockInterviewPage: NextPage = () => {
     };
 
     manageCamera();
-    // Don't stop camera on unmount here, handled by stage changes and main cleanup
   }, [stage, toast]);
 
   useEffect(() => {
@@ -236,7 +233,6 @@ const MockInterviewPage: NextPage = () => {
         description: "The first question is ready. The timer has begun.",
       });
     } catch (err) {
-      console.error("Error getting first question:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to start interview: ${errorMessage}`);
       setStage("error");
@@ -263,11 +259,10 @@ const MockInterviewPage: NextPage = () => {
       try {
         recognitionRef.current.start();
       } catch (e) {
-         console.error("Error starting recognition:", e);
          setIsListening(false); 
          let errorMsg = "Could not start voice input. ";
          // @ts-ignore
-         if (e && e.name) { // DOMException has a 'name' property
+         if (e && e.name) { 
             // @ts-ignore
             if (e.name === 'NotAllowedError' || e.name === 'SecurityError') {
                 errorMsg += "Microphone access was denied. Please allow microphone access in your browser settings and refresh the page.";
@@ -310,59 +305,40 @@ const MockInterviewPage: NextPage = () => {
       const input: InterviewProgressionInput = {
         resume: interviewConfig.resume,
         jobDescription: interviewConfig.jobDescription,
+        // Provide history including the current Q&A for the AI to process
         interviewHistory: [...interviewHistory, { question: currentQuestion, answer: userAnswer.trim() }],
       };
       const result: InterviewProgressionOutput = await getFeedbackAndNextQuestion(input);
       
-      setInterviewHistory(prev => {
-          const newHistory = [...prev, {...currentExchange, feedback: result.feedbackOnLastAnswer}];
-          return newHistory;
-      });
+      // Add the current exchange to history (without the per-turn feedback)
+      setInterviewHistory(prev => [...prev, currentExchange]);
       
-      if (isTTSEnabled && result.feedbackOnLastAnswer) {
-        speakText(result.feedbackOnLastAnswer);
-        
-        // Simple delay to allow feedback to be spoken before next question
-        const feedbackDurationEstimate = result.feedbackOnLastAnswer.length * 70; // Rough estimate
-        setTimeout(() => {
-            if (result.nextQuestion) {
-                setCurrentQuestion(result.nextQuestion);
-                if (isTTSEnabled) speakText(result.nextQuestion);
-            } else {
-                // No next question, consider ending the interview or special handling
-                setCurrentQuestion(null);
-                toast({ title: "Interview Concluding", description: "No more questions from the AI for now."});
-                handleEndInterview("no_more_questions");
-            }
-            setStage("interviewing");
-        }, isAISpeaking ? feedbackDurationEstimate + 500 : (result.feedbackOnLastAnswer ? 500 : 0) ); 
+      if (result.nextQuestion) {
+        setCurrentQuestion(result.nextQuestion);
+        if (isTTSEnabled) speakText(result.nextQuestion);
+        setStage("interviewing");
       } else {
-         if (result.nextQuestion) {
-            setCurrentQuestion(result.nextQuestion);
-            if (isTTSEnabled) speakText(result.nextQuestion);
-         } else {
-            setCurrentQuestion(null);
-            toast({ title: "Interview Concluding", description: "No more questions from the AI for now."});
-            handleEndInterview("no_more_questions");
-         }
-         setStage("interviewing");
+        setCurrentQuestion(null);
+        toast({ title: "Interview Concluding", description: "No more questions from the AI for now."});
+        handleEndInterview("no_more_questions"); // End interview if no next question
       }
       setUserAnswer("");
+
       if (result.nextQuestion) {
         toast({
           title: "Next Question Ready",
-          description: "Feedback on your previous answer is available.",
         });
       }
+
     } catch (err) {
-      console.error("Error getting next question/feedback:", err);
+      // Add current exchange to history even on error, but without feedback
       setInterviewHistory(prev => [...prev, currentExchange]);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to get next question: ${errorMessage}`);
       setStage("error"); 
       toast({
         title: "Error Processing Answer",
-        description: "Could not get feedback or the next question. Please try again if the issue persists.",
+        description: "Could not get the next question. Please try again if the issue persists.",
         variant: "destructive",
       });
       setIsAISpeaking(false);
@@ -386,19 +362,26 @@ const MockInterviewPage: NextPage = () => {
         description: `${endMessage} Generating final feedback...`,
     });
 
-    if (!interviewConfig || interviewHistory.length === 0) {
-        toast({ title: "Not Enough Data", description: "No interview data to provide feedback on.", variant: "destructive" });
-        setStage("setup"); // Go back to setup
+    if (!interviewConfig ) { // Removed interviewHistory.length === 0 check, as feedback can be given even for 0 questions if setup was done.
+        toast({ title: "Not Enough Data", description: "Interview setup not complete.", variant: "destructive" });
+        setStage("setup"); 
         return;
     }
     
-    // Ensure the last answer is captured if interview ended manually or by timer before submitting
     let finalInterviewHistory = [...interviewHistory];
+    // Capture the very last answer if the interview ends before it was formally submitted
     if (currentQuestion && userAnswer.trim() && (reason === "timer" || reason === "manual")) {
-        const lastExchangeNotYetSubmitted = !finalInterviewHistory.some(ex => ex.question === currentQuestion && ex.answer === userAnswer.trim());
-        if (lastExchangeNotYetSubmitted) {
+        const lastAnswerNotYetInHistory = !finalInterviewHistory.some(ex => ex.question === currentQuestion && ex.answer === userAnswer.trim());
+        if (lastAnswerNotYetInHistory) {
             finalInterviewHistory.push({ question: currentQuestion, answer: userAnswer.trim() });
         }
+    }
+
+    // If no questions were answered, but setup was done, pass an empty history.
+    // This allows the AI to potentially give feedback based on resume/job desc alone if desired,
+    // or handle it gracefully.
+    if (finalInterviewHistory.length === 0 && currentQuestion && userAnswer.trim()){
+         finalInterviewHistory.push({ question: currentQuestion, answer: userAnswer.trim() });
     }
 
 
@@ -413,7 +396,6 @@ const MockInterviewPage: NextPage = () => {
       setStage("final_feedback_display");
       speakText(`Your interview is complete. Here is your feedback. You scored ${result.overallScore} out of 100. ${result.overallSummary}`);
     } catch (err) {
-      console.error("Error getting final feedback:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to get final feedback: ${errorMessage}`);
       setStage("error");
@@ -463,7 +445,7 @@ const MockInterviewPage: NextPage = () => {
       stream.getTracks().forEach(track => track.stop());
       videoRef.current.srcObject = null;
     }
-    setHasCameraPermission(null); // Reset camera permission status
+    setHasCameraPermission(null); 
   };
 
   return (
@@ -519,7 +501,7 @@ const MockInterviewPage: NextPage = () => {
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-muted-foreground">
             {stage === "first_question_loading" && "Generating the first question..."}
-            {stage === "next_question_loading" && "Getting feedback and next question..."}
+            {stage === "next_question_loading" && "Getting next question..."}
             {stage === "final_feedback_loading" && "Generating your final interview report..."}
           </p>
         </div>
@@ -565,7 +547,7 @@ const MockInterviewPage: NextPage = () => {
                     </AlertDescription>
                  </Alert>
             )}
-             <Button onClick={() => handleEndInterview("manual")} variant="outline" className="w-full mt-auto" disabled={stage === "next_question_loading"}>
+             <Button onClick={() => handleEndInterview("manual")} variant="outline" className="w-full mt-auto" disabled={stage === "next_question_loading" || stage === "final_feedback_loading"}>
                 <StopCircle className="mr-2 h-4 w-4" /> End Interview Early
             </Button>
           </div>
@@ -600,12 +582,13 @@ const MockInterviewPage: NextPage = () => {
                         <p className="font-semibold text-left">You:</p>
                         <p className="text-sm whitespace-pre-wrap text-left">{exchange.answer}</p>
                       </div>
-                      {exchange.feedback && (
+                      {/* Per-turn feedback is now hidden during the interview */}
+                      {/* exchange.feedback && (
                         <div className="p-3 rounded-lg bg-secondary border border-primary/50">
                            <p className="font-semibold flex items-center"><Sparkles className="mr-2 h-4 w-4 text-accent" />Feedback:</p>
                            <p className="text-sm whitespace-pre-wrap">{exchange.feedback}</p>
                         </div>
-                      )}
+                      )*/}
                     </div>
                   ))}
                   {currentQuestion && (stage === "interviewing" || (stage === "next_question_loading" && !interviewHistory.find(h => h.question === currentQuestion && !!h.answer))) && (
