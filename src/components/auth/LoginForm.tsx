@@ -1,11 +1,13 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { signInWithEmailAndPassword } from "firebase/auth";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
-import { useRouter } from "next/navigation"; // Changed from 'next/navigation'
+import { useRouter } from "next/navigation";
+import { AppwriteException } from "appwrite";
+import { account } from "@/lib/appwrite";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -20,11 +22,10 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { OAuthButtons } from "./OAuthButtons";
 import { useToast } from "@/hooks/use-toast";
-import { auth } from "@/lib/firebase"; // Assuming you have initialized Firebase in lib/firebase.ts
 
 const formSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  password: z.string().min(1, { message: "Password is required." }), // Appwrite min password length is 8 for creation, but not for login
 });
 
 export function LoginForm() {
@@ -41,24 +42,24 @@ export function LoginForm() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
-      await signInWithEmailAndPassword(auth, values.email, values.password);
-      // Handle successful login
+      await account.createEmailPasswordSession(values.email, values.password);
       toast({
         title: "Login Successful",
         description: "Welcome back!",
       });
       router.push("/dashboard");
     } catch (error: any) {
-      // Handle errors
+      let errorMessage = "Invalid email or password.";
+      if (error instanceof AppwriteException) {
+        errorMessage = error.message; // Appwrite provides descriptive error messages
+      }
+      
       toast({
         title: "Login Failed",
-        description: error.message || "An unexpected error occurred.",
+        description: errorMessage,
         variant: "destructive",
       });
-      // You can add more specific error handling based on Firebase error codes
-      // For example, if the error code is 'auth/invalid-credential', you might set errors on email and password fields
-      form.setError("email", { message: "" });
-      form.setError("password", { message: error.message || "Invalid credentials" });
+      form.setError("password", { message: "Invalid credentials" }); // General error on password for simplicity
     }
   }
 

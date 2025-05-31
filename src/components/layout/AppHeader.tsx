@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -13,29 +14,55 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { APP_NAV_ITEMS, USER_NAV_ITEMS } from "@/lib/constants";
-import { usePathname, useRouter } from "next/navigation"; // useRouter for logout
+import { usePathname, useRouter } from "next/navigation";
+import { account } from "@/lib/appwrite"; // Import Appwrite account
+import { useToast } from "@/hooks/use-toast"; // For logout feedback
+import { useEffect, useState } from "react";
+import type { Models } from "appwrite"; // Import Models for user type
 
-// Placeholder for user data
-const useUser = () => ({ user: { name: "Demo User", email: "demo@example.com" }, isLoading: false }); 
-// Placeholder for logout function
-const useAuthActions = () => ({
-  logout: async () => {
-    console.log("Logging out...");
-    await new Promise(resolve => setTimeout(resolve, 500));
-    // router.push('/login'); // This would be part of actual logout logic
-    return true;
-  }
-});
+// Placeholder for Appwrite user data - in a real app, this would be in a global context/store
+const useAppwriteUser = () => {
+  const [user, setUser] = useState<Models.User<Models.Preferences> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const currentUser = await account.get();
+        setUser(currentUser);
+      } catch (error) {
+        setUser(null); // No user logged in or error fetching
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  return { user, isLoading };
+};
 
 export function AppHeader() {
-  const { user } = useUser();
-  const { logout } = useAuthActions();
-  const router = useRouter(); // For navigation after logout
+  const { user } = useAppwriteUser(); // Use Appwrite user hook
+  const router = useRouter();
   const pathname = usePathname();
+  const { toast } = useToast();
 
   const handleLogout = async () => {
-    await logout();
-    router.push("/login");
+    try {
+      await account.deleteSession('current');
+      toast({
+        title: "Logged Out",
+        description: "You have been successfully logged out.",
+      });
+      router.push("/login");
+    } catch (error) {
+      toast({
+        title: "Logout Failed",
+        description: "Could not log you out. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -46,7 +73,7 @@ export function AppHeader() {
       </Link>
       
       <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6 ml-auto">
-        {APP_NAV_ITEMS.slice(0, 3).map((item) => ( // Show first few items in header
+        {APP_NAV_ITEMS.slice(0, 3).map((item) => (
            <Link
             key={item.label}
             href={item.href}
@@ -93,7 +120,7 @@ export function AppHeader() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel>{user?.name || "My Account"}</DropdownMenuLabel>
+            <DropdownMenuLabel>{user?.name || user?.email || "My Account"}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {USER_NAV_ITEMS.map((item) => (
               <DropdownMenuItem key={item.label} asChild>

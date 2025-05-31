@@ -6,8 +6,8 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { auth } from "@/lib/firebase"; // Changed import and usage
+import { AppwriteException } from "appwrite";
+import { account } from "@/lib/appwrite"; 
 
 import { Button } from "@/components/ui/button";
 import {
@@ -24,9 +24,9 @@ import { OAuthButtons } from "./OAuthButtons";
 import { useToast } from "@/hooks/use-toast";
 
 const formSchema = z.object({
-  username: z.string().min(3, { message: "Username must be at least 3 characters." }),
+  username: z.string().min(3, { message: "Username must be at least 3 characters." }).max(128, { message: "Username cannot exceed 128 characters."}),
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  password: z.string().min(8, { message: "Password must be at least 8 characters." }),
 });
 
 export function RegisterForm() {
@@ -43,40 +43,41 @@ export function RegisterForm() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log("Registration attempt with:", values);
-    // const auth = getAuth(firebaseApp); // Removed this line
-
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password); // Use imported auth
-      // Update user profile with username
-      if (userCredential.user) {
-        await updateProfile(userCredential.user, {
-          displayName: values.username,
-        });
-      }
+      // Appwrite uses ID.unique() for a unique user ID if not provided
+      await account.create('unique()', values.email, values.password, values.username);
+      
+      // Appwrite automatically logs in the user after account creation if session creation is successful.
+      // We can update the name in the same call to create if desired, or separately.
+      // For simplicity, Appwrite's create method allows setting name directly.
+      // If a separate update is needed (e.g. after email verification or for other prefs):
+      // await account.updateName(values.username);
+
+
       toast({
         title: "Registration Successful",
-        description: "Your account has been created. Please login.",
+        description: "Your account has been created. You are now logged in.",
       });
-      router.push("/login");
-    } catch (error: any) {
-      console.error("Firebase registration error:", error);
-      let errorMessage = "Could not create account. Please try again.";
+      // Appwrite usually redirects or handles session after creation,
+      // but we can force a navigation to dashboard if needed
+      router.push("/dashboard"); 
 
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = "This email is already registered.";
-        form.setError("email", { message: errorMessage });
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = "Invalid email address.";
-        form.setError("email", { message: errorMessage });
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = "Password is too weak.";
-        form.setError("password", { message: errorMessage });
+    } catch (error: any) {
+      let errorMessage = "Could not create account. Please try again.";
+      if (error instanceof AppwriteException) {
+        errorMessage = error.message;
+        if (error.code === 409) { // User with the same email already exists
+            form.setError("email", { message: "This email is already registered." });
+        } else if (error.type === 'user_password_short' || error.message.toLowerCase().includes('password')) {
+             form.setError("password", { message: error.message });
+        } else if (error.type === 'user_name_invalid' || error.message.toLowerCase().includes('name')) {
+            form.setError("username", { message: error.message });
+        } else {
+            form.setError("root", { message: error.message });
+        }
       } else {
-        // Catch all for other Firebase auth errors or general errors
          form.setError("root", { message: errorMessage });
       }
-
 
       toast({
         title: "Registration Failed",
