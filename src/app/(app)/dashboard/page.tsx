@@ -96,7 +96,7 @@ export default function DashboardPage() {
                 id: report.$id,
                 title: `Interview: ${report.jobDescription.substring(0, 50)}${report.jobDescription.length > 50 ? '...' : ''}`,
                 timestamp: formatDistanceToNow(new Date(report.$createdAt), { addSuffix: true }),
-                href: `/interviews/report/${report.$id}` // Placeholder for actual report view page
+                href: `/interviews/report/${report.$id}` 
               };
             });
             setRecentInterviewReports(interviewsData);
@@ -166,7 +166,7 @@ export default function DashboardPage() {
           items={recentInterviewReports}
           isLoading={isLoadingInterviewReports}
           emptyMessage="No interview feedback available yet."
-          viewAllLink="/interviews/history" // Placeholder for actual interview history page
+          viewAllLink="/interviews/history" 
           emptyActionLink="/interviews"
           emptyActionText="Start an Interview"
         />
@@ -174,3 +174,5 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+    
