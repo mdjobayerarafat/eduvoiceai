@@ -1,38 +1,47 @@
 
+// src/app/(app)/page.tsx
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 /**
- * This page exists at the root of the (app) route group.
- * Its primary purpose is to redirect authenticated users to the /dashboard.
- * 
- * IMPORTANT: If you are seeing a Next.js error like "You cannot have two parallel pages that resolve to the same path"
- * (pointing to src/app/(app) and src/app/page.tsx), it means Next.js's static analysis
- * is detecting a conflict because both this file and src/app/page.tsx (your marketing page)
- * are trying to serve the root path ('/').
- * 
- * While this redirect *should* handle runtime navigation, the static analysis conflict
- * might persist. If it does, the most common and definitive solution is to **DELETE THIS FILE** 
- * (src/app/(app)/page.tsx).
- * 
- * After deleting this file, ensure your authentication flow (e.g., in your login form)
- * explicitly redirects users to `/dashboard` upon successful login.
- * Direct navigation to '/' would then always show the marketing page from src/app/page.tsx.
+ * This page serves as the root for the authenticated (app) section.
+ * Its primary purpose is to redirect users to the main dashboard.
+ *
+ * ===================================================================================
+ * IMPORTANT NOTE ON "PARALLEL PAGES" ERROR:
+ * ===================================================================================
+ * If you are consistently seeing an error from Next.js like:
+ *   "You cannot have two parallel pages that resolve to the same path.
+ *    Conflicting pages: /src/app/page.tsx and /src/app/(app)/page.tsx"
+ *
+ * This means Next.js's static analysis is detecting a conflict because both
+ * `src/app/page.tsx` (your main marketing/landing page) AND this file
+ * (`src/app/(app)/page.tsx`) are trying to serve the root path (`/`).
+ * The `(app)` directory is a Route Group and does NOT add to the URL path.
+ *
+ * While this redirect logic is the standard pattern for a page at the root of an
+ * authenticated group, Next.js might still flag the conflict based on the mere
+ * *existence* of both files targeting the same path, before this redirect can run.
+ *
+ * IF THE ERROR PERSISTS EVEN WITH THIS REDIRECT IN PLACE (AND AFTER A SERVER RESTART):
+ * THE MOST LIKELY AND DEFINITIVE SOLUTION IS TO MANUALLY DELETE THIS FILE
+ * (`src/app/(app)/page.tsx`) FROM YOUR PROJECT.
+ *
+ * Navigation to `/dashboard` (or any other page in the `(app)` group) would then
+ * occur programmatically (e.g., after a successful login redirects to `/dashboard`)
+ * or via direct links, and `src/app/page.tsx` would be the sole handler for the `/` path.
+ * ===================================================================================
  */
 export default function AppRootPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/dashboard");
+    router.replace('/dashboard');
   }, [router]);
 
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen">
-      <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-      <p className="text-muted-foreground">Redirecting to your dashboard...</p>
-    </div>
-  );
+  // Return null or a minimal loading indicator.
+  // This content will likely not be visible due to the immediate redirect.
+  return null;
 }

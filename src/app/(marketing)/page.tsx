@@ -1,3 +1,4 @@
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle, BookOpen, Mic, MessageSquare, Languages, Sparkles, Users, Settings, ShieldCheck } from "lucide-react";
@@ -27,7 +28,8 @@ const features = [
   },
 ];
 
-export default function LandingPage() {
+// Changed from default export to named export
+export function LandingPage() {
   return (
     <>
       <section className="w-full py-12 md:py-24 lg:py-32 xl:py-48 bg-gradient-to-br from-primary/10 via-background to-background">
