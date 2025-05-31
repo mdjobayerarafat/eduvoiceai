@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { BrainCircuit, Menu, Settings as SettingsIcon, UserCircle, LogOut } from "lucide-react";
+import { BrainCircuit, Menu, Settings as SettingsIcon, UserCircle, LogOut, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,14 +24,22 @@ import type { Models } from "appwrite"; // Import Models for user type
 const useAppwriteUser = () => {
   const [user, setUser] = useState<Models.User<Models.Preferences> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
       try {
         const currentUser = await account.get();
         setUser(currentUser);
+        // Conceptual admin check: In a real app, this would come from roles or custom claims
+        if (currentUser?.email === 'admin@example.com') { // Replace with your actual admin identifier
+          setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
+        }
       } catch (error) {
-        setUser(null); // No user logged in or error fetching
+        setUser(null); 
+        setIsAdmin(false);
       } finally {
         setIsLoading(false);
       }
@@ -39,11 +47,11 @@ const useAppwriteUser = () => {
     fetchUser();
   }, []);
 
-  return { user, isLoading };
+  return { user, isLoading, isAdmin };
 };
 
 export function AppHeader() {
-  const { user } = useAppwriteUser(); // Use Appwrite user hook
+  const { user, isAdmin } = useAppwriteUser(); // Use Appwrite user hook
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
@@ -84,7 +92,15 @@ export function AppHeader() {
         ))}
       </nav>
 
-      <div className="flex items-center gap-4 md:ml-auto md:gap-2 lg:gap-4">
+      <div className="flex items-center gap-2 md:ml-auto md:gap-2 lg:gap-4">
+        {isAdmin && (
+          <Button variant="outline" size="sm" asChild className="hidden md:flex">
+            <Link href="/admin/dashboard">
+              <ShieldAlert className="mr-2 h-4 w-4" />
+              Admin Area
+            </Link>
+          </Button>
+        )}
         <Sheet>
           <SheetTrigger asChild>
             <Button variant="outline" size="icon" className="md:hidden">
@@ -108,6 +124,18 @@ export function AppHeader() {
                   {item.label}
                 </Link>
               ))}
+               {isAdmin && (
+                <>
+                  <DropdownMenuSeparator />
+                   <Link
+                    href="/admin/dashboard"
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary ${pathname.startsWith('/admin') ? "bg-muted text-primary" : "text-muted-foreground"}`}
+                  >
+                    <ShieldAlert className="h-5 w-5" />
+                    Admin Area
+                  </Link>
+                </>
+              )}
             </nav>
           </SheetContent>
         </Sheet>
@@ -127,6 +155,17 @@ export function AppHeader() {
                 <Link href={item.href}>{item.label}</Link>
               </DropdownMenuItem>
             ))}
+            {isAdmin && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/admin/dashboard">
+                    <ShieldAlert className="mr-2 h-4 w-4" />
+                    Admin Dashboard
+                  </Link>
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" />

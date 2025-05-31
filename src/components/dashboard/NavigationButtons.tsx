@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { APP_NAV_ITEMS } from "@/lib/constants"; // Using the main nav items
 import { ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 // Filter out Dashboard from APP_NAV_ITEMS if it exists
 const dashboardNavItems = APP_NAV_ITEMS.filter(item => item.href !== '/dashboard');
@@ -9,6 +10,8 @@ const dashboardNavItems = APP_NAV_ITEMS.filter(item => item.href !== '/dashboard
 
 export function NavigationButtons() {
   return (
+    <>
+    {/* Placeholder for admin check */}
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {dashboardNavItems.map((item) => (
         <Link href={item.href} key={item.label} legacyBehavior>
@@ -34,5 +37,7 @@ export function NavigationButtons() {
           </a>
         </Link>
       ))}
-    </div>
+    </div></>
   );
+
+}
