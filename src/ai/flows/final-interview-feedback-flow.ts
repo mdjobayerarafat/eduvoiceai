@@ -29,12 +29,14 @@ const QuestionSpecificFeedbackSchema = z.object({
   question: z.string().describe("The original interview question."),
   answer: z.string().describe("The candidate's answer to the question."),
   specificFeedback: z.string().describe("Constructive feedback specific to this question and answer."),
+  questionScore: z.number().min(0).max(10).describe("A numerical score for the candidate's answer to this specific question, from 0 to 10 (0 being poor, 10 being excellent)."),
 });
 
 const FinalInterviewFeedbackOutputSchema = z.object({
   overallScore: z.number().min(0).max(100).describe("An overall score for the candidate's performance, out of 100."),
   overallSummary: z.string().describe("A concise overall summary of the candidate's performance, highlighting key strengths and areas for improvement."),
-  detailedFeedback: z.array(QuestionSpecificFeedbackSchema).describe("An array of specific feedback for each question-answer pair from the interview."),
+  detailedFeedback: z.array(QuestionSpecificFeedbackSchema).describe("An array of specific feedback for each question-answer pair from the interview, including a score for each answer."),
+  closingRemark: z.string().describe("A brief, professional closing remark to end the interview session (e.g., 'Thank you for your time. This concludes our mock interview.')."),
 });
 export type FinalInterviewFeedbackOutput = z.infer<typeof FinalInterviewFeedbackOutputSchema>;
 
@@ -65,9 +67,12 @@ Candidate: {{{answer}}}
 Your tasks are to:
 1.  Provide an overall score for the candidate's performance in the interview, as a number out of 100.
 2.  Write a concise overall summary of their performance. This summary should highlight key strengths and identify crucial areas for improvement based on the entire interview.
-3.  For each question asked and the corresponding answer given by the candidate during the interview, provide specific, constructive feedback.
+3.  For each question asked and the corresponding answer given by the candidate during the interview:
+    a. Provide specific, constructive feedback.
+    b. Assign a numerical score from 0 to 10 for the candidate's answer to that specific question (0=poor, 5=average, 10=excellent).
+4.  Provide a brief, professional closing remark to conclude the interview session.
 
-Respond strictly in the specified JSON output format. Ensure the 'overallScore' is a number between 0 and 100.
+Respond strictly in the specified JSON output format. Ensure the 'overallScore' is a number between 0 and 100, and each 'questionScore' is a number between 0 and 10.
 `,
 });
 
@@ -85,5 +90,3 @@ const finalInterviewFeedbackFlow = ai.defineFlow(
     return output;
   }
 );
-
-    

@@ -28,7 +28,7 @@ export type InterviewProgressionInput = z.infer<typeof InterviewProgressionInput
 
 const InterviewProgressionOutputSchema = z.object({
   feedbackOnLastAnswer: z.string().describe("Constructive feedback on the user's most recent answer."),
-  nextQuestion: z.string().describe("The next interview question to ask the user."),
+  nextQuestion: z.string().describe("The next interview question to ask the user. This can be an empty string if the AI determines there are no more relevant questions."),
 });
 export type InterviewProgressionOutput = z.infer<typeof InterviewProgressionOutputSchema>;
 
@@ -59,7 +59,10 @@ Candidate: {{{answer}}}
 
 Your tasks are:
 1. Provide concise, constructive feedback on the candidate's *last answer* in the interview history.
-2. Generate the *next relevant interview question* to continue the interview. Ensure the question builds upon the interview so far or explores new relevant areas based on the resume and job description. Do not repeat questions.
+2. Generate the *next relevant interview question* to continue the interview.
+   - Ensure the question builds upon the interview so far or explores new relevant areas based on the resume and job description. Do not repeat questions.
+   - Aim to ask a diverse set of approximately 10 questions in total if the topic and context allow. If fewer than 8-10 questions have been asked and you can still formulate relevant questions, please provide one.
+   - If you genuinely believe all relevant areas have been covered or the interview should conclude, you can return an empty string for the next question.
 
 Respond with only the feedback and the next question in the specified output format.
 `,

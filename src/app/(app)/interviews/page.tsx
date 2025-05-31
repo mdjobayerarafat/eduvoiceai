@@ -18,9 +18,8 @@ import type { InterviewProgressionInput, InterviewProgressionOutput } from "@/ai
 import { getFinalInterviewFeedback } from "@/ai/flows/final-interview-feedback-flow";
 import type { FinalInterviewFeedbackInput, FinalInterviewFeedbackOutput } from "@/ai/flows/final-interview-feedback-flow";
 
-
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, AlertTriangle, Video, VideoOff, MessageSquare, Sparkles, Mic, MicOff, Volume2, VolumeX, TimerIcon, StopCircle, ThumbsUp, ThumbsDown, Award } from "lucide-react";
+import { Loader2, AlertTriangle, Video, VideoOff, MessageSquare, Sparkles, Mic, MicOff, Volume2, VolumeX, TimerIcon, StopCircle, ThumbsUp, ThumbsDown, Award, Camera, CameraOff } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 type InterviewStage = "setup" | "first_question_loading" | "interviewing" | "next_question_loading" | "final_feedback_loading" | "final_feedback_display" | "error";
@@ -28,7 +27,6 @@ type InterviewStage = "setup" | "first_question_loading" | "interviewing" | "nex
 interface InterviewExchange {
   question: string;
   answer: string;
-  feedback?: string; // Per-turn feedback, now mostly unused during active interview
 }
 
 const SpeechRecognition = (typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)) || null;
@@ -47,6 +45,9 @@ const MockInterviewPage: NextPage = () => {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const [isVideoEnabled, setIsVideoEnabled] = useState<boolean>(true);
+  const [isCameraBeingToggled, setIsCameraBeingToggled] = useState<boolean>(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [isListening, setIsListening] = useState(false);
@@ -100,8 +101,17 @@ const MockInterviewPage: NextPage = () => {
     }
   }, []);
 
+  const stopCameraStream = useCallback(() => {
+    if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
+    }
+  },[]);
+
+
   useEffect(() => {
-    return () => { // Cleanup timer on unmount
+    return () => { 
       stopTimer();
       if (speechSynthesis && speechSynthesis.speaking) {
         speechSynthesis.cancel();
@@ -109,8 +119,9 @@ const MockInterviewPage: NextPage = () => {
       if (recognitionRef.current) {
         recognitionRef.current.abort();
       }
+      stopCameraStream();
     };
-  }, [stopTimer]);
+  }, [stopTimer, stopCameraStream]);
 
 
   useEffect(() => {
@@ -162,6 +173,12 @@ const MockInterviewPage: NextPage = () => {
 
   useEffect(() => {
     const manageCamera = async () => {
+      if (!isVideoEnabled || isCameraBeingToggled) {
+        stopCameraStream();
+        setHasCameraPermission(null); // Reset permission status if video explicitly disabled
+        return;
+      }
+
       if (stage === "interviewing" || stage === "next_question_loading" || stage === "final_feedback_loading") {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           try {
@@ -186,28 +203,20 @@ const MockInterviewPage: NextPage = () => {
             description: 'Your browser does not support camera access.',
           });
         }
-      } else if (stage !== "final_feedback_display") { // Keep camera on during feedback loading but turn off after display or on setup/error
-        if (videoRef.current && videoRef.current.srcObject) {
-          const stream = videoRef.current.srcObject as MediaStream;
-          stream.getTracks().forEach(track => track.stop());
-          videoRef.current.srcObject = null;
-        }
+      } else if (stage !== "final_feedback_display") { 
+        stopCameraStream();
       }
     };
 
     manageCamera();
-  }, [stage, toast]);
+  }, [stage, toast, isVideoEnabled, stopCameraStream, isCameraBeingToggled]);
 
   useEffect(() => {
     if (stage === "final_feedback_display" || stage === "error" || stage === "setup") {
         stopTimer();
-        if (videoRef.current && videoRef.current.srcObject) {
-             const stream = videoRef.current.srcObject as MediaStream;
-             stream.getTracks().forEach(track => track.stop());
-             videoRef.current.srcObject = null;
-        }
+        stopCameraStream();
     }
-  }, [stage, stopTimer]);
+  }, [stage, stopTimer, stopCameraStream]);
 
 
   useEffect(() => {
@@ -222,12 +231,13 @@ const MockInterviewPage: NextPage = () => {
     setFinalFeedback(null);
     setCurrentQuestion(null);
     setUserAnswer("");
+    setIsVideoEnabled(true); // Ensure video is attempted to be enabled on new interview start
     try {
       const result: FirstQuestionOutput = await getFirstInterviewQuestion(data);
       setCurrentQuestion(result.firstQuestion);
       setStage("interviewing");
       startTimer();
-      speakText(result.firstQuestion);
+      speakText(result.firstQuestion); // AI's first question (includes greeting)
       toast({
         title: "Interview Started!",
         description: "The first question is ready. The timer has begun.",
@@ -305,33 +315,25 @@ const MockInterviewPage: NextPage = () => {
       const input: InterviewProgressionInput = {
         resume: interviewConfig.resume,
         jobDescription: interviewConfig.jobDescription,
-        // Provide history including the current Q&A for the AI to process
         interviewHistory: [...interviewHistory, { question: currentQuestion, answer: userAnswer.trim() }],
       };
       const result: InterviewProgressionOutput = await getFeedbackAndNextQuestion(input);
       
-      // Add the current exchange to history (without the per-turn feedback)
       setInterviewHistory(prev => [...prev, currentExchange]);
       
       if (result.nextQuestion) {
         setCurrentQuestion(result.nextQuestion);
         if (isTTSEnabled) speakText(result.nextQuestion);
         setStage("interviewing");
+         toast({ title: "Next Question Ready" });
       } else {
         setCurrentQuestion(null);
-        toast({ title: "Interview Concluding", description: "No more questions from the AI for now."});
-        handleEndInterview("no_more_questions"); // End interview if no next question
+        toast({ title: "Interview Concluding", description: "The AI has no more questions."});
+        handleEndInterview("no_more_questions");
       }
       setUserAnswer("");
 
-      if (result.nextQuestion) {
-        toast({
-          title: "Next Question Ready",
-        });
-      }
-
     } catch (err) {
-      // Add current exchange to history even on error, but without feedback
       setInterviewHistory(prev => [...prev, currentExchange]);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to get next question: ${errorMessage}`);
@@ -355,21 +357,20 @@ const MockInterviewPage: NextPage = () => {
     let endMessage = "Interview ended. ";
     if (reason === "timer") endMessage += "Time's up!";
     if (reason === "manual") endMessage += "You ended the interview.";
-    if (reason === "no_more_questions") endMessage += "The AI has no more questions.";
+    if (reason === "no_more_questions") endMessage += "The AI has no more questions for you at this time.";
 
     toast({
         title: "Interview Over",
         description: `${endMessage} Generating final feedback...`,
     });
 
-    if (!interviewConfig ) { // Removed interviewHistory.length === 0 check, as feedback can be given even for 0 questions if setup was done.
+    if (!interviewConfig ) { 
         toast({ title: "Not Enough Data", description: "Interview setup not complete.", variant: "destructive" });
         setStage("setup"); 
         return;
     }
     
     let finalInterviewHistory = [...interviewHistory];
-    // Capture the very last answer if the interview ends before it was formally submitted
     if (currentQuestion && userAnswer.trim() && (reason === "timer" || reason === "manual")) {
         const lastAnswerNotYetInHistory = !finalInterviewHistory.some(ex => ex.question === currentQuestion && ex.answer === userAnswer.trim());
         if (lastAnswerNotYetInHistory) {
@@ -377,13 +378,9 @@ const MockInterviewPage: NextPage = () => {
         }
     }
 
-    // If no questions were answered, but setup was done, pass an empty history.
-    // This allows the AI to potentially give feedback based on resume/job desc alone if desired,
-    // or handle it gracefully.
     if (finalInterviewHistory.length === 0 && currentQuestion && userAnswer.trim()){
          finalInterviewHistory.push({ question: currentQuestion, answer: userAnswer.trim() });
     }
-
 
     try {
       const input: FinalInterviewFeedbackInput = {
@@ -394,7 +391,11 @@ const MockInterviewPage: NextPage = () => {
       const result = await getFinalInterviewFeedback(input);
       setFinalFeedback(result);
       setStage("final_feedback_display");
-      speakText(`Your interview is complete. Here is your feedback. You scored ${result.overallScore} out of 100. ${result.overallSummary}`);
+      let farewellMessage = `Your interview is complete. You scored ${result.overallScore} out of 100. ${result.overallSummary}.`;
+      if (result.closingRemark) {
+        farewellMessage = `${result.closingRemark} ${farewellMessage}`;
+      }
+      speakText(farewellMessage);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to get final feedback: ${errorMessage}`);
@@ -406,7 +407,6 @@ const MockInterviewPage: NextPage = () => {
       });
     }
   };
-
 
   const toggleTTS = () => {
     setIsTTSEnabled(prev => {
@@ -421,6 +421,21 @@ const MockInterviewPage: NextPage = () => {
       return newTTSEnabledState;
     });
   };
+
+  const toggleCamera = async () => {
+    setIsCameraBeingToggled(true);
+    const newVideoEnabledState = !isVideoEnabled;
+    setIsVideoEnabled(newVideoEnabledState);
+    if (!newVideoEnabledState) {
+        stopCameraStream();
+        setHasCameraPermission(null); // User explicitly turned off camera
+    }
+    // The useEffect for manageCamera will handle re-requesting permission if turned back on
+    toast({ title: `Camera ${newVideoEnabledState ? "Enabled" : "Disabled"}` });
+    // Allow time for stream to stop/start before resetting toggle flag
+    setTimeout(() => setIsCameraBeingToggled(false), 500); 
+  };
+
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
@@ -440,12 +455,9 @@ const MockInterviewPage: NextPage = () => {
     setIsListening(false);
     setFinalFeedback(null);
     setRemainingTime(INTERVIEW_DURATION_MINUTES * 60);
-     if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-    }
+    stopCameraStream();
     setHasCameraPermission(null); 
+    setIsVideoEnabled(true); // Default to video enabled for new interview
   };
 
   return (
@@ -462,10 +474,17 @@ const MockInterviewPage: NextPage = () => {
               {stage === "error" && "An error occurred."}
             </p>
           </div>
-          {(stage === "interviewing" || stage === "next_question_loading" || stage === "final_feedback_display") && (
-             <Button onClick={toggleTTS} variant="outline" size="icon" title={isTTSEnabled ? "Mute AI Voice" : "Unmute AI Voice"}>
-                {isTTSEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-              </Button>
+           {(stage === "interviewing" || stage === "next_question_loading" || stage === "final_feedback_loading" || stage === "final_feedback_display") && (
+             <div className="flex items-center gap-2">
+                <Button onClick={toggleTTS} variant="outline" size="icon" title={isTTSEnabled ? "Mute AI Voice" : "Unmute AI Voice"}>
+                    {isTTSEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+                </Button>
+                {(stage === "interviewing" || stage === "next_question_loading" || stage === "final_feedback_loading") && (
+                    <Button onClick={toggleCamera} variant="outline" size="icon" title={isVideoEnabled ? "Turn Camera Off" : "Turn Camera On"} disabled={isCameraBeingToggled}>
+                        {isCameraBeingToggled ? <Loader2 className="h-5 w-5 animate-spin" /> : (isVideoEnabled ? <Camera className="h-5 w-5" /> : <CameraOff className="h-5 w-5" />)}
+                    </Button>
+                )}
+             </div>
           )}
         </div>
       </div>
@@ -523,22 +542,26 @@ const MockInterviewPage: NextPage = () => {
             </Card>
             
              <CardTitle className="font-headline text-lg flex items-center px-1 pt-2">
-              {hasCameraPermission ? <Video className="mr-2 text-green-500" /> : <VideoOff className="mr-2 text-red-500" />}
+              {isVideoEnabled && hasCameraPermission ? <Video className="mr-2 text-green-500" /> : <VideoOff className="mr-2 text-red-500" />}
               Your Camera
             </CardTitle>
-            <div className="w-full aspect-[4/3] rounded-md bg-muted overflow-hidden border shadow-inner">
-              <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+            <div className="w-full aspect-[4/3] rounded-md bg-muted overflow-hidden border shadow-inner flex items-center justify-center">
+              {isVideoEnabled ? (
+                <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+              ) : (
+                <Image src="https://placehold.co/600x400.png" alt="Camera off" width={600} height={400} className="w-full h-full object-cover opacity-50" data-ai-hint="video off user avatar" />
+              )}
             </div>
-            {hasCameraPermission === false && (
+            {isVideoEnabled && hasCameraPermission === false && (
               <Alert variant="destructive" className="mt-2 text-xs">
                 <AlertTriangle className="h-3 w-3" />
                 <AlertTitle className="text-sm">Camera Issue</AlertTitle>
                 <AlertDescription className="text-xs">
-                  Could not access camera. Please grant permissions and refresh.
+                  Could not access camera. Please grant permissions.
                 </AlertDescription>
               </Alert>
             )}
-            {hasCameraPermission === null && (stage === "interviewing" || stage === "next_question_loading") && ( 
+            {isVideoEnabled && hasCameraPermission === null && (stage === "interviewing" || stage === "next_question_loading") && !isCameraBeingToggled && ( 
                  <Alert className="mt-2 text-xs">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <AlertTitle className="text-sm">Camera</AlertTitle>
@@ -582,13 +605,6 @@ const MockInterviewPage: NextPage = () => {
                         <p className="font-semibold text-left">You:</p>
                         <p className="text-sm whitespace-pre-wrap text-left">{exchange.answer}</p>
                       </div>
-                      {/* Per-turn feedback is now hidden during the interview */}
-                      {/* exchange.feedback && (
-                        <div className="p-3 rounded-lg bg-secondary border border-primary/50">
-                           <p className="font-semibold flex items-center"><Sparkles className="mr-2 h-4 w-4 text-accent" />Feedback:</p>
-                           <p className="text-sm whitespace-pre-wrap">{exchange.feedback}</p>
-                        </div>
-                      )*/}
                     </div>
                   ))}
                   {currentQuestion && (stage === "interviewing" || (stage === "next_question_loading" && !interviewHistory.find(h => h.question === currentQuestion && !!h.answer))) && (
@@ -652,7 +668,10 @@ const MockInterviewPage: NextPage = () => {
                     Start New Interview
                 </Button>
             </div>
-            <CardDescription>Here's your overall performance and detailed feedback.</CardDescription>
+            <CardDescription>
+                {finalFeedback.closingRemark && <p className="italic mb-2">{finalFeedback.closingRemark}</p>}
+                Here's your overall performance and detailed feedback.
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex-grow overflow-y-auto p-4 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
@@ -677,8 +696,18 @@ const MockInterviewPage: NextPage = () => {
                     <div className="space-y-4">
                     {finalFeedback.detailedFeedback.map((item, index) => (
                         <Card key={index} className="p-4">
-                            <p className="font-semibold text-primary">Question {index + 1}:</p>
-                            <p className="text-sm text-muted-foreground mb-1 whitespace-pre-wrap">{item.question}</p>
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="font-semibold text-primary">Question {index + 1}:</p>
+                                    <p className="text-sm text-muted-foreground mb-1 whitespace-pre-wrap">{item.question}</p>
+                                </div>
+                                {item.questionScore !== undefined && (
+                                    <div className="text-right ml-4">
+                                        <p className="text-xs text-muted-foreground">Score</p>
+                                        <p className="text-lg font-semibold text-primary">{item.questionScore}/10</p>
+                                    </div>
+                                )}
+                            </div>
                             
                             <p className="font-semibold mt-2">Your Answer:</p>
                             <p className="text-sm mb-2 p-2 bg-primary/5 rounded whitespace-pre-wrap">{item.answer || <span className="italic text-muted-foreground">No answer provided.</span>}</p>
@@ -687,6 +716,9 @@ const MockInterviewPage: NextPage = () => {
                             <p className="text-sm p-2 bg-secondary/30 rounded whitespace-pre-wrap">{item.specificFeedback}</p>
                         </Card>
                     ))}
+                    {finalFeedback.detailedFeedback.length === 0 && (
+                        <p className="text-muted-foreground text-center py-4">No questions were answered during the interview.</p>
+                    )}
                     </div>
                 </ScrollArea>
             </div>
@@ -700,4 +732,3 @@ const MockInterviewPage: NextPage = () => {
 }
 
 export default MockInterviewPage;
-
