@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { APP_NAV_ITEMS, USER_NAV_ITEMS } from "@/lib/constants";
+import { APP_NAV_ITEMS, USER_NAV_ITEMS, ADMIN_NAV_ITEMS } from "@/lib/constants";
 import { usePathname, useRouter } from "next/navigation";
 import { account } from "@/lib/appwrite"; 
 import { useToast } from "@/hooks/use-toast"; 
@@ -80,6 +80,10 @@ export function AppHeader() {
     }
   };
 
+  const isAdminPathActive = ADMIN_NAV_ITEMS.some(item => 
+    (item.matchPaths && item.matchPaths.some(p => pathname.startsWith(p))) || pathname === item.href
+  );
+
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-card px-4 md:px-6 shrink-0">
       <Link href="/dashboard" className="flex items-center gap-2 text-lg font-semibold md:text-base mr-auto md:mr-0">
@@ -102,7 +106,7 @@ export function AppHeader() {
       <div className="flex items-center gap-2 md:ml-auto md:gap-2 lg:gap-4">
         {!isLoading && isAdmin && ( // Only show if not loading and isAdmin
           <Button variant="outline" size="sm" asChild className="hidden md:flex bg-primary/10 hover:bg-primary/20 border-primary/30 text-primary hover:text-primary">
-            <Link href="/admin/admindashboard">
+            <Link href="/admindashboard">
               <ShieldAlert className="mr-2 h-4 w-4" />
               Admin Area
             </Link>
@@ -135,8 +139,8 @@ export function AppHeader() {
                 <>
                   <DropdownMenuSeparator />
                    <Link
-                    href="/admin/admindashboard"
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary ${pathname.startsWith('/admin') ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground font-medium"}`}
+                    href="/admindashboard" // Main link for "Admin Area"
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary ${isAdminPathActive ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground font-medium"}`}
                   >
                     <ShieldAlert className="h-5 w-5" />
                     Admin Area
@@ -166,7 +170,7 @@ export function AppHeader() {
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/admin/admindashboard" className="font-medium text-primary">
+                  <Link href="/admindashboard" className="font-medium text-primary">
                     <ShieldAlert className="mr-2 h-4 w-4" />
                     Admin Dashboard
                   </Link>
@@ -184,4 +188,3 @@ export function AppHeader() {
     </header>
   );
 }
-
