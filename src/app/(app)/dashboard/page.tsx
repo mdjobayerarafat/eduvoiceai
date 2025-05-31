@@ -48,8 +48,8 @@ export default function DashboardPage() {
         }
         const userId = user.$id;
 
-        // Placeholder admin check: In a real app, use Appwrite roles or labels.
-        if (user?.email === 'admin@example.com') {
+        // Check if the user has the 'admin' label in Appwrite
+        if (user?.labels?.includes('admin')) {
           setIsAdmin(true);
         } else {
           setIsAdmin(false);
@@ -190,6 +190,9 @@ export default function DashboardPage() {
                 </Link>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground mt-3">
+                Note: For admin access to function, ensure the logged-in user has the 'admin' label in Appwrite.
+            </p>
           </div>
         </>
       )}
