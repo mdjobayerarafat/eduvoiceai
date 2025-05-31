@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Youtube } from "lucide-react";
@@ -17,6 +18,28 @@ function renderMarkdown(markdown: string) {
     .map(paragraph => `<p class="mb-4">${paragraph.replace(/\n/g, '<br />')}</p>`)
     .join('');
   return { __html: html };
+}
+
+function getYouTubeVideoId(url: string): string | null {
+  if (!url) return null;
+  // Regex to extract video ID from various YouTube URL formats
+  // Handles:
+  // - https://www.youtube.com/watch?v=VIDEO_ID
+  // - https://youtu.be/VIDEO_ID
+  // - https://www.youtube.com/embed/VIDEO_ID
+  // - https://www.youtube.com/v/VIDEO_ID
+  // - https://www.youtube.com/user/channelname#p/a/u/1/VIDEO_ID
+  // - https://music.youtube.com/watch?v=VIDEO_ID
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  if (match && match[2] && match[2].length === 11) {
+    return match[2];
+  }
+  // Fallback: if the provided link is already just an 11-character ID
+  if (url.length === 11 && /^[a-zA-Z0-9_-]+$/.test(url)) {
+    return url;
+  }
+  return null;
 }
 
 
@@ -44,16 +67,7 @@ export function LectureDisplay({ lecture, topic }: LectureDisplayProps) {
               <h3 className="font-headline text-xl font-semibold mb-3 text-primary">Relevant YouTube Videos</h3>
               <ul className="space-y-3">
                 {lecture.youtubeVideoLinks.map((link, index) => {
-                  // Attempt to extract video ID for embedding
-                  let videoId = null;
-                  try {
-                    const url = new URL(link);
-                    if (url.hostname === "www.youtube.com" || url.hostname === "youtube.com") {
-                      videoId = url.searchParams.get("v");
-                    } else if (url.hostname === "youtu.be") {
-                      videoId = url.pathname.substring(1);
-                    }
-                  } catch (e) { console.error("Invalid URL:", link); }
+                  const videoId = getYouTubeVideoId(link);
 
                   return (
                     <li key={index} className="group">
@@ -63,8 +77,8 @@ export function LectureDisplay({ lecture, topic }: LectureDisplayProps) {
                             width="100%"
                             height="100%"
                             src={`https://www.youtube.com/embed/${videoId}`}
-                            title={`YouTube video player for ${topic}`}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            title={`YouTube video player for ${topic} - Video ${index + 1}`}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                             allowFullScreen
                           ></iframe>
                         </div>
@@ -75,7 +89,7 @@ export function LectureDisplay({ lecture, topic }: LectureDisplayProps) {
                           rel="noopener noreferrer"
                           className="text-accent hover:underline flex items-center"
                         >
-                          <Youtube className="mr-2 h-5 w-5" /> Watch Video {index + 1}
+                          <Youtube className="mr-2 h-5 w-5" /> Watch Video {index + 1} (Link)
                         </a>
                       )}
                     </li>
@@ -89,3 +103,4 @@ export function LectureDisplay({ lecture, topic }: LectureDisplayProps) {
     </Card>
   );
 }
+

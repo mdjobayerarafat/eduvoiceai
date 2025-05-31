@@ -42,7 +42,7 @@ const topicLecturePrompt = ai.definePrompt({
   The lecture should include:
   - A detailed summary of the topic.
   - Clear and concise explanations of key concepts.
-  - A list of relevant YouTube video links that provide further information and examples.
+  - A list of relevant, publicly available YouTube video links. Please provide full standard YouTube video URLs (e.g., 'https://www.youtube.com/watch?v=VIDEO_ID' or 'https://youtu.be/VIDEO_ID'). Avoid links to private, unlisted, or region-restricted videos if possible.
 
   Please ensure the lecture is informative, engaging, and easy to understand.
 
@@ -63,3 +63,4 @@ const topicLectureFlow = ai.defineFlow(
     return output!;
   }
 );
+
