@@ -1,5 +1,5 @@
 
-import { Client, Account, Databases, Storage, Avatars } from 'appwrite';
+import { Client, Account, Databases, Storage, Avatars, ID, Permission, Role, Query } from 'appwrite';
 
 const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
 const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
@@ -34,4 +34,7 @@ const databases = new Databases(client);
 const storage = new Storage(client);
 const avatars = new Avatars(client);
 
-export { client, account, databases, storage, avatars };
+export { client, account, databases, storage, avatars, ID, Permission, Role, Query };
+
+export const APPWRITE_DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
+export const LECTURES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_LECTURES_COLLECTION_ID!;
