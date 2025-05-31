@@ -2,78 +2,86 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Ticket, BarChart3, Construction } from "lucide-react";
-import Link from "next/link";
+import { Users, BookOpenText, MessageSquareText, Ticket, ShieldAlert } from "lucide-react";
+
+// Placeholder data - in a real app, this would come from a backend API
+const adminStats = {
+  totalUsers: 125,
+  activeLectures: 78,
+  interviewsTaken: 210,
+  vouchersIssued: 35,
+};
 
 export default function AdminDashboardPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="font-headline text-3xl font-semibold">Admin Dashboard</h1>
+        <h1 className="font-headline text-3xl font-semibold flex items-center">
+          <ShieldAlert className="mr-3 h-8 w-8 text-primary" /> Admin Dashboard
+        </h1>
         <p className="text-muted-foreground mt-1">
-          Overview and management tools for EduVoice AI. (Conceptual)
+          Overview of EduVoice AI platform activity and user statistics.
         </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="hover:shadow-lg transition-shadow">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="font-headline text-xl">Registered Users</CardTitle>
-            <Users className="h-5 w-5 text-primary" />
+            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">1,234</div>
-            <p className="text-xs text-muted-foreground">
-              (Placeholder)
-            </p>
-            <Link href="/admin/users" className="text-sm text-accent hover:underline mt-2 block">
-              Manage Users &rarr;
-            </Link>
+            <div className="text-2xl font-bold">{adminStats.totalUsers.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Registered users on the platform.</p>
           </CardContent>
         </Card>
-
-        <Card className="hover:shadow-lg transition-shadow">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="font-headline text-xl">Vouchers Issued</CardTitle>
-            <Ticket className="h-5 w-5 text-primary" />
+            <CardTitle className="text-sm font-medium">Lectures Generated</CardTitle>
+            <BookOpenText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">56</div>
-            <p className="text-xs text-muted-foreground">
-              (Placeholder)
-            </p>
-             <Link href="/admin/vouchers" className="text-sm text-accent hover:underline mt-2 block">
-              Manage Vouchers &rarr;
-            </Link>
+            <div className="text-2xl font-bold">{adminStats.activeLectures.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Total lectures created by users.</p>
           </CardContent>
         </Card>
-
-        <Card className="hover:shadow-lg transition-shadow">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="font-headline text-xl">User Activity</CardTitle>
-            <BarChart3 className="h-5 w-5 text-primary" />
+            <CardTitle className="text-sm font-medium">Interviews Taken</CardTitle>
+            <MessageSquareText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">
-              (Placeholder for activity metrics)
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Monitoring lecture generation, interviews taken, etc. would require backend implementation.
-            </p>
+            <div className="text-2xl font-bold">{adminStats.interviewsTaken.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Mock interviews completed.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Vouchers Issued</CardTitle>
+            <Ticket className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{adminStats.vouchersIssued.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Discount vouchers created.</p>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="font-headline text-2xl flex items-center">
-            <Construction className="mr-2 h-6 w-6 text-accent" />
-            More Admin Features Coming Soon
-          </CardTitle>
+          <CardTitle className="font-headline text-xl">Recent Activity (Conceptual)</CardTitle>
+          <CardDescription>
+            This section would display a feed of recent important activities, e.g., new user registrations, high token usage alerts, etc. Backend implementation is required.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">
-            This admin panel is a conceptual placeholder. Full functionality for managing users, monitoring detailed activities, and creating/managing vouchers requires backend development and database integration.
+          <p className="text-sm text-muted-foreground">
+            - User 'john.doe@example.com' registered. (2 minutes ago)<br />
+            - Lecture on 'Quantum Physics' generated. (15 minutes ago)<br />
+            - Admin 'admin@example.com' issued a new voucher. (1 hour ago)
+          </p>
+          <p className="mt-4 text-xs text-destructive">
+            Note: Data displayed here is for demonstration purposes only. Real-time activity monitoring and data fetching need backend integration with Appwrite (e.g., using Functions and database queries).
           </p>
         </CardContent>
       </Card>

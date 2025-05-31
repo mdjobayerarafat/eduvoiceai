@@ -15,10 +15,10 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { APP_NAV_ITEMS, USER_NAV_ITEMS } from "@/lib/constants";
 import { usePathname, useRouter } from "next/navigation";
-import { account } from "@/lib/appwrite"; // Import Appwrite account
-import { useToast } from "@/hooks/use-toast"; // For logout feedback
+import { account } from "@/lib/appwrite"; 
+import { useToast } from "@/hooks/use-toast"; 
 import { useEffect, useState } from "react";
-import type { Models } from "appwrite"; // Import Models for user type
+import type { Models } from "appwrite"; 
 
 // Placeholder for Appwrite user data - in a real app, this would be in a global context/store
 const useAppwriteUser = () => {
@@ -28,13 +28,20 @@ const useAppwriteUser = () => {
 
   useEffect(() => {
     const fetchUser = async () => {
+      setIsLoading(true);
       try {
         const currentUser = await account.get();
         setUser(currentUser);
-        // Conceptual admin check: In a real app, this would come from roles or custom claims
-        if (currentUser?.email === 'admin@example.com') { // Replace with your actual admin identifier
+        // Conceptual admin check: In a real app, this would come from Appwrite roles or team memberships
+        // or custom claims if you implement them. For this prototype, we check a specific email.
+        if (currentUser?.email === 'admin@example.com') { 
           setIsAdmin(true);
         } else {
+          // You might also check Appwrite teams here:
+          // const teams = await account.listTeams();
+          // if (teams.teams.some(team => team.name === 'Admins' && team.$id === 'YOUR_ADMIN_TEAM_ID')) {
+          //   setIsAdmin(true);
+          // }
           setIsAdmin(false);
         }
       } catch (error) {
@@ -51,7 +58,7 @@ const useAppwriteUser = () => {
 };
 
 export function AppHeader() {
-  const { user, isAdmin } = useAppwriteUser(); // Use Appwrite user hook
+  const { user, isAdmin, isLoading } = useAppwriteUser(); 
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
@@ -81,7 +88,7 @@ export function AppHeader() {
       </Link>
       
       <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6 ml-auto">
-        {APP_NAV_ITEMS.slice(0, 3).map((item) => (
+        {APP_NAV_ITEMS.slice(0, 3).map((item) => ( // Show first 3 main nav items
            <Link
             key={item.label}
             href={item.href}
@@ -93,8 +100,8 @@ export function AppHeader() {
       </nav>
 
       <div className="flex items-center gap-2 md:ml-auto md:gap-2 lg:gap-4">
-        {isAdmin && (
-          <Button variant="outline" size="sm" asChild className="hidden md:flex">
+        {!isLoading && isAdmin && ( // Only show if not loading and isAdmin
+          <Button variant="outline" size="sm" asChild className="hidden md:flex bg-primary/10 hover:bg-primary/20 border-primary/30 text-primary hover:text-primary">
             <Link href="/admin/dashboard">
               <ShieldAlert className="mr-2 h-4 w-4" />
               Admin Area
@@ -124,12 +131,12 @@ export function AppHeader() {
                   {item.label}
                 </Link>
               ))}
-               {isAdmin && (
+               {!isLoading && isAdmin && (
                 <>
                   <DropdownMenuSeparator />
                    <Link
                     href="/admin/dashboard"
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary ${pathname.startsWith('/admin') ? "bg-muted text-primary" : "text-muted-foreground"}`}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary ${pathname.startsWith('/admin') ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground font-medium"}`}
                   >
                     <ShieldAlert className="h-5 w-5" />
                     Admin Area
@@ -155,11 +162,11 @@ export function AppHeader() {
                 <Link href={item.href}>{item.label}</Link>
               </DropdownMenuItem>
             ))}
-            {isAdmin && (
+            {!isLoading && isAdmin && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/admin/dashboard">
+                  <Link href="/admin/dashboard" className="font-medium text-primary">
                     <ShieldAlert className="mr-2 h-4 w-4" />
                     Admin Dashboard
                   </Link>

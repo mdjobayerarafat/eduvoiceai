@@ -1,28 +1,38 @@
-// src/app/(app)/page.tsx
-import { redirect } from 'next/navigation';
+
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 
 /**
- * This page is at the root of the (app) route group.
- * Its primary purpose is to redirect users to the main dashboard page.
+ * This page exists at the root of the (app) route group.
+ * Its primary purpose is to redirect authenticated users to the /dashboard.
  * 
- * IMPORTANT:
- * If you are still seeing the error "You cannot have two parallel pages that 
- * resolve to the same path" after this file has been updated and your server
- * restarted, it means Next.js is detecting a structural conflict at the
- * file system level. This is because both:
- *   1. src/app/page.tsx (your marketing page)
- *   2. src/app/(app)/page.tsx (this file, even with a redirect)
- * are attempting to serve the root path ('/').
+ * IMPORTANT: If you are seeing a Next.js error like "You cannot have two parallel pages that resolve to the same path"
+ * (pointing to src/app/(app) and src/app/page.tsx), it means Next.js's static analysis
+ * is detecting a conflict because both this file and src/app/page.tsx (your marketing page)
+ * are trying to serve the root path ('/').
  * 
- * In such a persistent case, the most direct and recommended solution is to 
- * REMOVE this file (src/app/(app)/page.tsx) from your project. 
- * Your src/app/page.tsx will then be the sole handler for the root path. 
- * Navigation into the (app) group (e.g., to /dashboard) will occur through 
- * other means, such as links or programmatic navigation after login.
+ * While this redirect *should* handle runtime navigation, the static analysis conflict
+ * might persist. If it does, the most common and definitive solution is to **DELETE THIS FILE** 
+ * (src/app/(app)/page.tsx).
+ * 
+ * After deleting this file, ensure your authentication flow (e.g., in your login form)
+ * explicitly redirects users to `/dashboard` upon successful login.
+ * Direct navigation to '/' would then always show the marketing page from src/app/page.tsx.
  */
 export default function AppRootPage() {
-  // This redirect function throws a NEXT_REDIRECT error,
-  // which Next.js catches to perform the actual navigation.
-  // This ensures this component does not attempt to render any content itself.
-  redirect('/dashboard');
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/dashboard");
+  }, [router]);
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen">
+      <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+      <p className="text-muted-foreground">Redirecting to your dashboard...</p>
+    </div>
+  );
 }
