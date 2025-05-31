@@ -1,6 +1,6 @@
 
 import { initializeApp, getApps, FirebaseApp } from "firebase/app";
-import { getAuth, Auth } from "firebase/auth";
+import { getAuth, Auth, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
 // import { getFirestore, Firestore } from "firebase/firestore"; // Example if you need Firestore
 
 // Your web app's Firebase configuration
@@ -28,4 +28,10 @@ if (!getApps().length) {
 auth = getAuth(app);
 // db = getFirestore(app); // Example for Firestore
 
-export { app, auth /*, db */ };
+const googleProvider = new GoogleAuthProvider();
+const appleProvider = new OAuthProvider('apple.com');
+appleProvider.addScope('email');
+appleProvider.addScope('name');
+
+
+export { app, auth, googleProvider, appleProvider /*, db */ };

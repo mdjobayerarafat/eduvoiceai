@@ -1,9 +1,14 @@
+
 "use client";
 
+import { useRouter } from "next/navigation";
+import { signInWithPopup } from "firebase/auth";
+import { auth, googleProvider, appleProvider } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
 
-// Placeholder for Google Icon
+// Google Icon
 const GoogleIcon = () => (
   <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -13,18 +18,63 @@ const GoogleIcon = () => (
   </svg>
 );
 
+// Apple Icon
+const AppleIcon = () => (
+  <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M19.655 15.074c-.465 1.499-1.449 2.929-2.825 2.929-1.264 0-1.94-.797-3.316-.797s-2.081.797-3.316.797c-1.375 0-2.331-1.387-2.825-2.929-.548-1.748.069-4.531 1.307-6.078.672-.865 1.439-1.45 2.263-1.45.912 0 1.481.633 2.562.633s1.621-.633 2.591-.633c.824 0 1.59.584 2.263 1.45.974 1.254 1.884 3.839 1.306 6.078zm-4.717-9.18c.084-.992.797-1.826 1.539-2.264-.548-.939-1.797-1.293-2.479-1.321-.992.028-1.911.527-2.422.527s-1.401-.499-2.39-.527c-1.207 0-2.292.605-2.882 1.539.939.557 1.539 1.65 1.481 2.74-.056.992-.741 1.797-1.481 2.208.689.997 1.997 1.375 2.622 1.347.964-.028 1.596-.584 2.305-.584s1.319.556 2.305.584c.624.028 1.933-.35 2.622-1.347-.741-.411-1.425-1.216-1.452-2.208z"/>
+  </svg>
+);
+
 export function OAuthButtons() {
-  const handleGoogleLogin = () => {
-    // Placeholder for Google OAuth logic
-    console.log("Attempting Google login...");
-    // Typically, you'd use Firebase or NextAuth here:
-    // signIn('google');
+  const router = useRouter();
+  const { toast } = useToast();
+
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+      toast({
+        title: "Login Successful",
+        description: "Welcome!",
+      });
+      router.push("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Google Login Failed",
+        description: error.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    try {
+      await signInWithPopup(auth, appleProvider);
+      toast({
+        title: "Login Successful",
+        description: "Welcome!",
+      });
+      router.push("/dashboard");
+    } catch (error: any) {
+      // Handle common errors for Apple Sign In
+      let description = error.message || "An unexpected error occurred.";
+      if (error.code === 'auth/popup-closed-by-user') {
+        description = "Login cancelled. The popup was closed.";
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        description = "Login cancelled. Multiple login attempts made.";
+      } else if (error.code === 'auth/account-exists-with-different-credential') {
+         description = "An account already exists with the same email address but different sign-in credentials. Try signing in with a different method.";
+      }
+      toast({
+        title: "Apple Login Failed",
+        description: description,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
     <>
-      <div className="relative my-4">
-        <Separator />
+      <div className="relative my-6">
         <div className="absolute inset-0 flex items-center">
           <span className="w-full border-t" />
         </div>
@@ -34,10 +84,16 @@ export function OAuthButtons() {
           </span>
         </div>
       </div>
-      <Button variant="outline" className="w-full" onClick={handleGoogleLogin}>
-        <GoogleIcon />
-        Google
-      </Button>
+      <div className="space-y-2">
+        <Button variant="outline" className="w-full" onClick={handleGoogleLogin}>
+          <GoogleIcon />
+          Google
+        </Button>
+        <Button variant="outline" className="w-full bg-black text-white hover:bg-gray-800 hover:text-white" onClick={handleAppleLogin}>
+          <AppleIcon />
+          Sign in with Apple
+        </Button>
+      </div>
     </>
   );
 }
