@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { OAuthButtons } from "./OAuthButtons";
 import { useToast } from "@/hooks/use-toast";
+import { auth } from "@/lib/firebase"; // Assuming you have initialized Firebase in lib/firebase.ts
 
 const formSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
@@ -38,29 +40,25 @@ export function LoginForm() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    // Placeholder for login logic
-    console.log("Login attempt with:", values);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Example:
-    // const success = await loginUser(values.email, values.password);
-    const success = true; // Simulate successful login
-
-    if (success) {
+    try {
+      await signInWithEmailAndPassword(auth, values.email, values.password);
+      // Handle successful login
       toast({
         title: "Login Successful",
         description: "Welcome back!",
       });
       router.push("/dashboard");
-    } else {
+    } catch (error: any) {
+      // Handle errors
       toast({
         title: "Login Failed",
-        description: "Invalid email or password.",
+        description: error.message || "An unexpected error occurred.",
         variant: "destructive",
       });
-      form.setError("email", { message: " " }); // Clear specific errors by setting a space
-      form.setError("password", { message: "Invalid email or password." });
+      // You can add more specific error handling based on Firebase error codes
+      // For example, if the error code is 'auth/invalid-credential', you might set errors on email and password fields
+      form.setError("email", { message: "" });
+      form.setError("password", { message: error.message || "Invalid credentials" });
     }
   }
 

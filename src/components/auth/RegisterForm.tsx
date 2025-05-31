@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -5,6 +6,8 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { auth } from "@/lib/firebase"; // Changed import and usage
 
 import { Button } from "@/components/ui/button";
 import {
@@ -40,29 +43,46 @@ export function RegisterForm() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    // Placeholder for registration logic
     console.log("Registration attempt with:", values);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // const auth = getAuth(firebaseApp); // Removed this line
 
-    // Example:
-    // const success = await registerUser(values.username, values.email, values.password);
-    const success = true; // Simulate successful registration
-
-    if (success) {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password); // Use imported auth
+      // Update user profile with username
+      if (userCredential.user) {
+        await updateProfile(userCredential.user, {
+          displayName: values.username,
+        });
+      }
       toast({
         title: "Registration Successful",
         description: "Your account has been created. Please login.",
       });
       router.push("/login");
-    } else {
+    } catch (error: any) {
+      console.error("Firebase registration error:", error);
+      let errorMessage = "Could not create account. Please try again.";
+
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "This email is already registered.";
+        form.setError("email", { message: errorMessage });
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email address.";
+        form.setError("email", { message: errorMessage });
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "Password is too weak.";
+        form.setError("password", { message: errorMessage });
+      } else {
+        // Catch all for other Firebase auth errors or general errors
+         form.setError("root", { message: errorMessage });
+      }
+
+
       toast({
         title: "Registration Failed",
-        description: "Could not create account. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
-      // Example of setting a specific error if email is taken
-      // form.setError("email", { message: "This email is already registered." });
     }
   }
 
@@ -114,6 +134,9 @@ export function RegisterForm() {
                 </FormItem>
               )}
             />
+            {form.formState.errors.root && (
+              <FormMessage>{form.formState.errors.root.message}</FormMessage>
+            )}
             <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
               {form.formState.isSubmitting ? "Creating Account..." : "Register"}
             </Button>
