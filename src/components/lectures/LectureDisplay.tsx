@@ -85,3 +85,7 @@ export function LectureDisplay({ lecture, topic }: LectureDisplayProps) {
             </div>
           </>
         )}
+      </CardContent>
+    </Card>
+  );
+}

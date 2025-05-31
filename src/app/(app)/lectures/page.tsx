@@ -70,4 +70,8 @@ export default function LecturesPage() {
       )}
 
       {lecture && currentTopic && (
-        <LectureDisplay lecture={lecture} topic={currentTopic}
+        <LectureDisplay lecture={lecture} topic={currentTopic} />
+      )}
+    </div>
+  );
+}
