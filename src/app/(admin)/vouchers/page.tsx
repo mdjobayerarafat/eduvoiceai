@@ -18,7 +18,7 @@ import type { Voucher } from "@/types/voucher";
 import { Models } from "appwrite";
 
 interface VoucherFormData {
-  code: string;
+  code: string; // This will be used for the 'key' attribute
   discountPercent: string;
   expiryDate: string; // Store as yyyy-MM-dd string for input
   maxUses: string; 
@@ -26,9 +26,9 @@ interface VoucherFormData {
 
 // Function to determine voucher status based on expiry date and maxUses
 const getVoucherStatus = (voucher: Voucher): "Active" | "Expired" | "Inactive" | "Used Up" => {
-    if (voucher.status === "Inactive") return "Inactive"; // If explicitly inactive
-    if (new Date(voucher.expiryDate) < new Date()) return "Expired";
-    if (voucher.maxUses !== null && voucher.uses >= voucher.maxUses) return "Used Up";
+    if (voucher.status === "Inactive") return "Inactive"; 
+    if (new Date(voucher.ExpiryDate) < new Date()) return "Expired"; // Changed to ExpiryDate
+    if (voucher.MaxUses !== null && voucher.uses >= voucher.MaxUses) return "Used Up"; // Changed to MaxUses
     return "Active";
 };
 
@@ -94,31 +94,26 @@ export default function ManageVouchersPage() {
     }
     setIsSubmitting(true);
     try {
-      const currentUser = await account.get(); // For user ID for permissions
-       if (!APPWRITE_DATABASE_ID || !VOUCHERS_COLLECTION_ID) {
+      if (!APPWRITE_DATABASE_ID || !VOUCHERS_COLLECTION_ID) {
         throw new Error("Voucher collection configuration is missing for creation.");
       }
 
-      const newVoucherData: Omit<Voucher, keyof Models.Document | '$databaseId' | '$collectionId' | '$permissions' | 'status' | 'uses'> & { key: string } = {
-        key: formData.code.toUpperCase(), // Added key attribute
-        code: formData.code.toUpperCase(),
-        discountPercent: parseInt(formData.discountPercent),
-        expiryDate: new Date(formData.expiryDate).toISOString(), // Store as ISO string
-        maxUses: formData.maxUses ? parseInt(formData.maxUses) : null,
-      };
-      
-      // Add status and uses for new voucher
-      const fullNewVoucher = {
-        ...newVoucherData,
-        status: "Active" as "Active", // Set initial status
+      const newVoucherPayload = {
+        key: formData.code.toUpperCase(),
+        Discount: parseInt(formData.discountPercent), // Changed to Discount
+        ExpiryDate: new Date(formData.expiryDate).toISOString(), // Changed to ExpiryDate
+        MaxUses: formData.maxUses ? parseInt(formData.maxUses) : null, // Changed to MaxUses
+        // Frontend-specific fields or fields Appwrite might ignore if not in schema:
+        code: formData.code.toUpperCase(), // Keeping this for potential frontend use or if Appwrite allows extra fields
+        status: "Active" as "Active", 
         uses: 0,
-      }
+      };
 
       const createdDocument = await databases.createDocument(
         APPWRITE_DATABASE_ID,
         VOUCHERS_COLLECTION_ID,
         ID.unique(),
-        fullNewVoucher,
+        newVoucherPayload,
         [
           Permission.read(Role.any()), 
           Permission.update(Role.label("admin")), 
@@ -128,12 +123,12 @@ export default function ManageVouchersPage() {
       
       setVouchers(prev => [createdDocument as Voucher, ...prev]);
       toast({ title: "Voucher Created", description: `Voucher ${createdDocument.code} added.`, className: "bg-green-100 border-green-300 text-green-800"});
-      setFormData({ code: "", discountPercent: "", expiryDate: "", maxUses: "" }); // Reset form
+      setFormData({ code: "", discountPercent: "", expiryDate: "", maxUses: "" }); 
     } catch (err: any) {
       console.error("Error creating voucher:", err);
       let specificError = "Failed to create voucher.";
        if (err instanceof AppwriteException) {
-            specificError = `Appwrite Error: ${err.message}. Ensure 'vouchers' collection exists and has correct permissions. Also check that 'label:admin' is a valid permission target for your user.`;
+            specificError = `Appwrite Error: ${err.message}. Ensure 'vouchers' collection exists with required attributes (key, Discount, ExpiryDate, MaxUses) and correct permissions. Also check that 'label:admin' is a valid permission target.`;
         } else if (err instanceof Error) {
             specificError = err.message;
         }
@@ -161,7 +156,7 @@ export default function ManageVouchersPage() {
   };
 
 
-  if (isLoading && !error) { // Show loading only if no error yet
+  if (isLoading && !error) { 
     return (
       <div className="flex justify-center items-center h-screen">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -206,13 +201,13 @@ export default function ManageVouchersPage() {
             <PlusCircle className="mr-2 h-5 w-5 text-accent" /> Create New Voucher
           </CardTitle>
           <CardDescription>
-            Define a new voucher code. Ensure your Appwrite 'vouchers' collection is set up with appropriate attributes (key, code, discountPercent, expiryDate, maxUses, uses, status) and permissions.
+            Define a new voucher code. Ensure your Appwrite 'vouchers' collection is set up with appropriate attributes (key, Discount, ExpiryDate, MaxUses, etc.) and permissions.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreateVoucher} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
             <div className="space-y-2">
-              <Label htmlFor="code">Voucher Code</Label>
+              <Label htmlFor="code">Voucher Code (Key)</Label>
               <Input id="code" name="code" placeholder="e.g., EDU25OFF" value={formData.code} onChange={handleInputChange} disabled={isSubmitting} />
             </div>
             <div className="space-y-2">
@@ -228,6 +223,7 @@ export default function ManageVouchersPage() {
                   value={formData.expiryDate}
                   onChange={handleInputChange}
                   disabled={isSubmitting}
+                  min={new Date().toISOString().split("T")[0]} // Prevent selecting past dates
                 />
             </div>
              <div className="space-y-2">
@@ -252,7 +248,7 @@ export default function ManageVouchersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Code</TableHead>
+                <TableHead>Code (Key)</TableHead>
                 <TableHead><Percent className="inline h-4 w-4 mr-1" /> Discount</TableHead>
                 <TableHead><CalendarDays className="inline h-4 w-4 mr-1" /> Expiry Date</TableHead>
                 <TableHead>Status</TableHead>
@@ -265,9 +261,9 @@ export default function ManageVouchersPage() {
                 const status = getVoucherStatus(voucher);
                 return (
                 <TableRow key={voucher.$id}>
-                  <TableCell className="font-medium">{voucher.code}</TableCell>
-                  <TableCell>{voucher.discountPercent}%</TableCell>
-                  <TableCell>{format(parseISO(voucher.expiryDate), "PPP")}</TableCell>
+                  <TableCell className="font-medium">{voucher.key}</TableCell>
+                  <TableCell>{voucher.Discount}%</TableCell> 
+                  <TableCell>{format(parseISO(voucher.ExpiryDate), "PPP")}</TableCell>
                   <TableCell>
                      <Badge variant={status === "Active" ? "default" : (status === "Expired" || status === "Used Up") ? "destructive" : "secondary"}
                             className={status === "Active" ? "bg-green-500/20 text-green-700 border-green-500/30" : 
@@ -279,7 +275,7 @@ export default function ManageVouchersPage() {
                         {status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">{voucher.uses} / {voucher.maxUses || "∞"}</TableCell>
+                  <TableCell className="text-right">{voucher.uses} / {voucher.MaxUses || "∞"}</TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -293,7 +289,7 @@ export default function ManageVouchersPage() {
                         <DropdownMenuItem onClick={() => alert("Edit voucher: Functionality to be implemented. This would typically involve a modal/form pre-filled with voucher data and an Appwrite updateDocument call.")}>
                           <Edit className="mr-2 h-4 w-4" /> Edit (Conceptual)
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleDeleteVoucher(voucher.$id, voucher.code)}>
+                        <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleDeleteVoucher(voucher.$id, voucher.key)}>
                           <Trash2 className="mr-2 h-4 w-4" /> Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -318,5 +314,4 @@ export default function ManageVouchersPage() {
     </div>
   );
 }
-
     
