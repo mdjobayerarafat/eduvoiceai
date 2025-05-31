@@ -51,7 +51,7 @@ export function LoginForm() {
           description: "Welcome back!",
         });
         if (user.labels && user.labels.includes("admin")) {
-          router.push("/admindashboard"); // Navigate to admin dashboard
+          router.push("/dashboard"); // Navigate to admin dashboard
         } else {
           router.push("/dashboard");
         }

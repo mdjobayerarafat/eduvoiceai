@@ -47,12 +47,8 @@ export default function DashboardPage() {
           return;
         }
 
-        // If user is admin, redirect them to the admin dashboard from the user dashboard
-        if (user.labels && user.labels.includes('admin')) {
-          router.push('/admindashboard');
-          return; // Stop further processing for this page if admin
-        }
-        
+        setIsAdmin(user.labels && user.labels.includes('admin'));
+        console.log('User object:', user, 'Is Admin:', isAdmin);
         // This will only run for non-admin users now
         const userId = user.$id;
 

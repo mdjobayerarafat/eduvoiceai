@@ -64,35 +64,8 @@ export function AppSidebar() {
           </div>
         </div>
 
-        {isAdminUser && (
-          <>
-            <Separator className="my-4" />
-            <div className="mt-6 px-3 py-2">
-              <h3 className="mb-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center">
-                <ShieldAlert className="h-4 w-4 mr-2" /> Admin Panel
-              </h3>
-              <div className="space-y-1">
-                {ADMIN_NAV_ITEMS.map((item) => (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary hover:bg-primary/10",
-                      (pathname === item.href || (item.matchPaths && item.matchPaths.some(p => pathname.startsWith(p)))) &&
-                        "bg-primary/10 text-primary font-medium"
-                    )}
-                  >
-                    <item.icon className="h-5 w-5" />
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-               <p className="px-3 pt-2 text-xs text-muted-foreground">
-                (Admin links are placeholders. Full role-based access control requires backend implementation.)
-              </p>
-            </div>
-          </>
-        )}
+       
+      
       </ScrollArea>
     </div>
   );

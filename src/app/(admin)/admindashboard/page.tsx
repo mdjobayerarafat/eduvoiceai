@@ -3,7 +3,9 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, BookOpenText, MessageSquareText, Ticket, ShieldAlert } from "lucide-react";
-
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { account } from "@/lib/appwrite";
 // Placeholder data - in a real app, this would come from a backend API
 const adminStats = {
   totalUsers: 125,
@@ -13,6 +15,21 @@ const adminStats = {
 };
 
 export default function AdminDashboardPage() {
+  const router = useRouter();
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      try {
+        const user = await account.get();
+        if (!user.labels || !user.labels.includes("admin")) {
+          router.push("/dashboard");
+        }
+      } catch (error) {
+        console.error("Error fetching user for admin check:", error);
+        router.push("/dashboard"); // Redirect if there's an error fetching user or no user
+      }
+    };
+    checkAdminStatus();
+  }, [router]);
   return (
     <div className="space-y-8">
       <div>

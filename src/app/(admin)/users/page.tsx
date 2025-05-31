@@ -1,31 +1,104 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Users, MoreHorizontal, Search, Filter, Download, ShieldCheck, Ban, TrendingUp } from "lucide-react";
+import { Users, MoreHorizontal, Search, Filter, Download, ShieldCheck, Ban, TrendingUp, Loader2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { account, users as appwriteUsers, AppwriteException } from "@/lib/appwrite";
+import type { AppwriteUser } from "@/types/appwriteUser"; // Use the more specific type
+import { formatDistanceToNow } from 'date-fns';
 
-// Placeholder user data - in a real app, this would come from Appwrite
-const placeholderUsers = [
-  { id: "1", name: "Alice Wonderland", email: "alice@example.com", plan: "Free Tier", tokensUsed: 45000, lastActivity: "2 hours ago", status: "Active" },
-  { id: "2", name: "Bob The Builder", email: "bob@example.com", plan: "Pro Plan", tokensUsed: 120000, lastActivity: "1 day ago", status: "Active" },
-  { id: "3", name: "Charlie Brown", email: "charlie@example.com", plan: "Free Tier", tokensUsed: 59000, lastActivity: "5 hours ago", status: "Needs Subscription" },
-  { id: "4", name: "Diana Prince", email: "diana@example.com", plan: "Free Tier", tokensUsed: 15000, lastActivity: "3 days ago", status: "Inactive" },
-  { id: "5", name: "Edward Scissorhands", email: "edward@example.com", plan: "Banned", tokensUsed: 0, lastActivity: "1 week ago", status: "Banned" },
-];
+// Function to determine user status conceptually based on Appwrite data
+const getConceptualUserStatus = (user: AppwriteUser): string => {
+  if (!user.status) return "Unknown"; // Appwrite's user.status is boolean (enabled/disabled)
+  if (!user.emailVerification) return "Pending Verification";
+  // Conceptual: if (user.labels.includes("banned")) return "Banned";
+  // Conceptual: if (user.tokensUsed > 60000 && !user.labels.includes("subscribed")) return "Needs Subscription";
+  return user.status ? "Active" : "Disabled";
+};
 
 export default function ManageUsersPage() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
+  const [users, setUsers] = useState<AppwriteUser[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredUsers = placeholderUsers.filter(user =>
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  useEffect(() => {
+    const fetchUsersAndCheckAdmin = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const currentUser = await account.get();
+        if (!currentUser.labels || !currentUser.labels.includes("admin")) {
+          router.push("/dashboard"); // Redirect non-admins
+          return;
+        }
+
+        // Fetch users - Note: Listing users might require specific Appwrite permissions.
+        // This call might fail if not executed with an API key with users.read scope or by an admin.
+        // For client-side, ensure permissions are set or use a backend function.
+        const response = await appwriteUsers.list();
+        setUsers(response.users as AppwriteUser[]);
+
+      } catch (err: any) {
+        console.error("Error fetching users or admin check:", err);
+         let specificError = "Failed to load user data. You may not have permissions or there was a server issue.";
+        if (err instanceof AppwriteException) {
+            specificError = `Appwrite Error: ${err.message}. Ensure your Appwrite user or API key has 'users.read' permissions.`;
+        }
+        setError(specificError);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchUsersAndCheckAdmin();
+  }, [router]);
+
+  const filteredUsers = users.filter(user =>
+    (user.name && user.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+  
+  // Conceptual actions - these would require Appwrite Functions or direct SDK calls with proper permissions
+  const handleMakeAdmin = (userId: string) => alert(`Conceptual: Make user ${userId} admin. Requires Appwrite backend logic to update user labels.`);
+  const handleBanUser = (userId: string) => alert(`Conceptual: Ban user ${userId}. Requires Appwrite backend logic to update user status or labels.`);
+
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+         <p className="ml-4">Loading User Management...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+     return (
+      <div className="space-y-8 p-4">
+         <h1 className="font-headline text-3xl font-semibold flex items-center">
+          <Users className="mr-3 h-8 w-8 text-destructive" /> Manage Users Error
+        </h1>
+        <Card className="border-destructive">
+          <CardHeader>
+            <CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2"/> Data Fetching Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-destructive-foreground">{error}</p>
+            <Button onClick={() => router.push('/admindashboard')} variant="outline" className="mt-4">Back to Admin Dashboard</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
 
   return (
     <div className="space-y-8">
@@ -40,9 +113,9 @@ export default function ManageUsersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="font-headline text-xl">User List</CardTitle>
+          <CardTitle className="font-headline text-xl">User List ({filteredUsers.length} / {users.length})</CardTitle>
           <CardDescription>
-            Browse and manage all registered users. Full functionality requires backend integration.
+            Browse and manage all registered users. Some actions are conceptual and require backend implementation.
           </CardDescription>
           <div className="flex flex-col sm:flex-row items-center gap-2 pt-4">
             <div className="relative flex-grow w-full sm:w-auto">
@@ -55,10 +128,10 @@ export default function ManageUsersPage() {
                 className="pl-8 w-full"
               />
             </div>
-            <Button variant="outline" className="w-full sm:w-auto">
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => alert("Filter functionality to be implemented.")}>
               <Filter className="mr-2 h-4 w-4" /> Filter
             </Button>
-            <Button variant="outline" className="w-full sm:w-auto">
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => alert("User export functionality to be implemented.")}>
               <Download className="mr-2 h-4 w-4" /> Export Users
             </Button>
           </div>
@@ -69,36 +142,40 @@ export default function ManageUsersPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead className="text-right">Tokens Used</TableHead>
+                <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Last Activity</TableHead>
+                <TableHead>Joined</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredUsers.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
+                <TableRow key={user.$id}>
+                  <TableCell className="font-medium">{user.name || "N/A"}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
-                    <Badge variant={user.plan === "Pro Plan" ? "default" : "secondary"}>{user.plan}</Badge>
+                    {user.labels?.includes("admin") ? (
+                      <Badge variant="default" className="bg-primary/80 text-primary-foreground">Admin</Badge>
+                    ) : (
+                      <Badge variant="secondary">User</Badge>
+                    )}
                   </TableCell>
-                  <TableCell className="text-right">{user.tokensUsed.toLocaleString()}</TableCell>
                   <TableCell>
                     <Badge
                       variant={
-                        user.status === "Active" ? "default" :
-                        user.status === "Needs Subscription" ? "outline" :
-                        user.status === "Banned" ? "destructive" : "secondary"
+                        getConceptualUserStatus(user) === "Active" ? "default" :
+                        getConceptualUserStatus(user) === "Needs Subscription" ? "outline" : // conceptual
+                        getConceptualUserStatus(user) === "Banned" ? "destructive" : // conceptual
+                        getConceptualUserStatus(user) === "Disabled" ? "destructive" :
+                        "secondary"
                       }
-                      className={user.status === "Active" ? "bg-green-500/20 text-green-700 border-green-500/30" : 
-                                 user.status === "Needs Subscription" ? "bg-yellow-500/20 text-yellow-700 border-yellow-500/30" : ""}
+                      className={getConceptualUserStatus(user) === "Active" ? "bg-green-500/20 text-green-700 border-green-500/30" : 
+                                 getConceptualUserStatus(user) === "Needs Subscription" ? "bg-yellow-500/20 text-yellow-700 border-yellow-500/30" : ""}
                     >
-                      {user.status}
+                      {getConceptualUserStatus(user)}
                     </Badge>
                   </TableCell>
-                  <TableCell>{user.lastActivity}</TableCell>
+                  <TableCell>{formatDistanceToNow(new Date(user.$createdAt), { addSuffix: true })}</TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -109,14 +186,16 @@ export default function ManageUsersPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => alert(`View activity for ${user.name}. Requires activity logging collection.`)}>
                           <TrendingUp className="mr-2 h-4 w-4" /> View Activity
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <ShieldCheck className="mr-2 h-4 w-4" /> Make Admin (Conceptual)
+                        {!user.labels?.includes("admin") && (
+                        <DropdownMenuItem onClick={() => handleMakeAdmin(user.$id)}>
+                          <ShieldCheck className="mr-2 h-4 w-4" /> Make Admin
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50">
-                          <Ban className="mr-2 h-4 w-4" /> Ban User (Conceptual)
+                        )}
+                        <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleBanUser(user.$id)}>
+                          <Ban className="mr-2 h-4 w-4" /> Ban User
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -125,15 +204,16 @@ export default function ManageUsersPage() {
               ))}
               {filteredUsers.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">
-                    No users found matching your criteria.
+                  <TableCell colSpan={6} className="h-24 text-center">
+                    {users.length > 0 ? "No users found matching your search." : "No users found in the system."}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
            <p className="mt-4 text-xs text-destructive">
-            Note: User data is placeholder. Actions like 'Make Admin' or 'Ban User' are conceptual and require robust backend implementation with Appwrite (e.g., managing user roles, status, and audit logs).
+            Note: User data is fetched from Appwrite. Actions like 'Make Admin' or 'Ban User' are conceptual and require robust backend implementation (e.g., Appwrite Functions to manage user labels/status and audit logs).
+            Fetching all users requires appropriate permissions on your Appwrite project for the client or use of a backend function.
           </p>
         </CardContent>
       </Card>
