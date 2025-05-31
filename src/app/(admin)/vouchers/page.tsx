@@ -26,9 +26,12 @@ interface VoucherFormData {
 
 // Function to determine voucher status based on expiry date and maxUses
 const getVoucherStatus = (voucher: Voucher): "Active" | "Expired" | "Inactive" | "Used Up" => {
+    // If status is explicitly set to "Inactive" and is a stored attribute
     if (voucher.status === "Inactive") return "Inactive"; 
-    if (new Date(voucher.ExpiryDate) < new Date()) return "Expired"; // Changed to ExpiryDate
-    if (voucher.MaxUses !== null && voucher.uses >= voucher.MaxUses) return "Used Up"; // Changed to MaxUses
+    
+    if (new Date(voucher.ExpiryDate) < new Date()) return "Expired";
+    // Ensure voucher.uses is treated as a number, defaulting to 0 if undefined
+    if (voucher.MaxUses !== null && (voucher.uses ?? 0) >= voucher.MaxUses) return "Used Up";
     return "Active";
 };
 
@@ -98,15 +101,20 @@ export default function ManageVouchersPage() {
         throw new Error("Voucher collection configuration is missing for creation.");
       }
 
-      const newVoucherPayload = {
+      // Only include attributes defined in the Appwrite collection schema
+      const newVoucherPayload: {
+        key: string;
+        Discount: number;
+        ExpiryDate: string;
+        MaxUses: number | null;
+      } = {
         key: formData.code.toUpperCase(),
-        Discount: parseInt(formData.discountPercent), // Changed to Discount
-        ExpiryDate: new Date(formData.expiryDate).toISOString(), // Changed to ExpiryDate
-        MaxUses: formData.maxUses ? parseInt(formData.maxUses) : null, // Changed to MaxUses
-        // Frontend-specific fields or fields Appwrite might ignore if not in schema:
-        code: formData.code.toUpperCase(), // Keeping this for potential frontend use or if Appwrite allows extra fields
-        status: "Active" as "Active", 
-        uses: 0,
+        Discount: parseInt(formData.discountPercent),
+        ExpiryDate: new Date(formData.expiryDate).toISOString(),
+        MaxUses: formData.maxUses ? parseInt(formData.maxUses) : null,
+        // Removed: code, status, uses - as they might not be in the Appwrite schema
+        // If 'status' and 'uses' are actual attributes in your Appwrite collection, add them back here.
+        // e.g., status: "Active", uses: 0
       };
 
       const createdDocument = await databases.createDocument(
@@ -121,8 +129,11 @@ export default function ManageVouchersPage() {
         ]
       );
       
+      // Add the newly created document to the local state.
+      // It might be missing 'code', 'status', 'uses' if they aren't returned by Appwrite or part of newVoucherPayload.
+      // The Voucher type makes these optional, so casting is okay, but display logic needs to handle potential undefined.
       setVouchers(prev => [createdDocument as Voucher, ...prev]);
-      toast({ title: "Voucher Created", description: `Voucher ${createdDocument.code} added.`, className: "bg-green-100 border-green-300 text-green-800"});
+      toast({ title: "Voucher Created", description: `Voucher ${createdDocument.key} added.`, className: "bg-green-100 border-green-300 text-green-800"});
       setFormData({ code: "", discountPercent: "", expiryDate: "", maxUses: "" }); 
     } catch (err: any) {
       console.error("Error creating voucher:", err);
@@ -275,7 +286,7 @@ export default function ManageVouchersPage() {
                         {status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">{voucher.uses} / {voucher.MaxUses || "∞"}</TableCell>
+                  <TableCell className="text-right">{(voucher.uses ?? 0)} / {voucher.MaxUses || "∞"}</TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -308,10 +319,13 @@ export default function ManageVouchersPage() {
           </Table>
           <p className="mt-4 text-xs text-destructive">
             Note: Voucher data is fetched from Appwrite. Create and Delete actions interact with Appwrite. Edit is conceptual. Ensure your Appwrite setup and permissions allow these operations.
+            If 'uses' or manual 'status' (like Inactive) are not attributes in your Appwrite collection, their display here might be limited.
           </p>
         </CardContent>
       </Card>
     </div>
   );
 }
+    
+
     
