@@ -44,44 +44,45 @@ export function RegisterForm() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
-      // Appwrite uses ID.unique() for a unique user ID if not provided
       await account.create('unique()', values.email, values.password, values.username);
       
-      // Appwrite automatically logs in the user after account creation if session creation is successful.
-      // We can update the name in the same call to create if desired, or separately.
-      // For simplicity, Appwrite's create method allows setting name directly.
-      // If a separate update is needed (e.g. after email verification or for other prefs):
-      // await account.updateName(values.username);
-
-
       toast({
         title: "Registration Successful",
         description: "Your account has been created. You are now logged in.",
       });
-      // Appwrite usually redirects or handles session after creation,
-      // but we can force a navigation to dashboard if needed
       router.push("/dashboard"); 
 
     } catch (error: any) {
-      let errorMessage = "Could not create account. Please try again.";
+      console.error("Registration error object:", error); // Log the actual error object
+
+      let finalErrorMessage: string;
+
       if (error instanceof AppwriteException) {
-        errorMessage = error.message;
+        finalErrorMessage = error.message; // Appwrite's message is usually good
         if (error.code === 409) { // User with the same email already exists
             form.setError("email", { message: "This email is already registered." });
+            finalErrorMessage = "This email is already registered. Try logging in or using a different email.";
         } else if (error.type === 'user_password_short' || error.message.toLowerCase().includes('password')) {
              form.setError("password", { message: error.message });
         } else if (error.type === 'user_name_invalid' || error.message.toLowerCase().includes('name')) {
             form.setError("username", { message: error.message });
         } else {
+            // For other Appwrite errors, set a root error
             form.setError("root", { message: error.message });
         }
       } else {
-         form.setError("root", { message: errorMessage });
+        // Non-Appwrite Error
+        if (error && error.message) {
+          finalErrorMessage = `An unexpected error occurred: ${error.message}. Please check your network connection and Appwrite server configuration (endpoint, project ID, platform hostname).`;
+        } else {
+          finalErrorMessage = "An unexpected error occurred. Please check your network connection and Appwrite server configuration. The server might be unreachable or not configured for this domain.";
+        }
+        form.setError("root", { message: finalErrorMessage });
       }
 
       toast({
         title: "Registration Failed",
-        description: errorMessage,
+        description: finalErrorMessage,
         variant: "destructive",
       });
     }
