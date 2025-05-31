@@ -87,7 +87,7 @@ const MockInterviewPage: NextPage = () => {
       recognition.onstart = () => setIsListening(true);
       recognition.onend = () => setIsListening(false);
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.error('Speech recognition error', event.error);
+        // console.error('Speech recognition error', event.error); // Removed to avoid redundant console message for handled errors
         setIsListening(false);
         let errorMsg = "Speech recognition error. Please try again.";
         if (event.error === 'no-speech') {
