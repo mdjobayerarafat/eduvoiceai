@@ -4,18 +4,30 @@ import { Client, Account, Databases, Storage, Avatars } from 'appwrite';
 const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
 const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
 
-if (!endpoint) {
-  throw new Error("NEXT_PUBLIC_APPWRITE_ENDPOINT is not set in .env file");
+// More detailed checks and error messages
+if (typeof endpoint !== 'string' || endpoint.trim() === '') {
+  throw new Error(
+    `NEXT_PUBLIC_APPWRITE_ENDPOINT is not a valid string or is empty. Value: "${endpoint}", Type: ${typeof endpoint}. Please check your .env file and ensure your Next.js server has been restarted.`
+  );
 }
-if (!projectId) {
-  throw new Error("NEXT_PUBLIC_APPWRITE_PROJECT_ID is not set in .env file");
+if (typeof projectId !== 'string' || projectId.trim() === '') {
+  throw new Error(
+    `NEXT_PUBLIC_APPWRITE_PROJECT_ID is not a valid string or is empty. Value: "${projectId}", Type: ${typeof projectId}. Please check your .env file and ensure your Next.js server has been restarted.`
+  );
 }
 
 const client = new Client();
 
-client
-  .setEndpoint(endpoint)
-  .setProject(projectId);
+try {
+  client
+    .setEndpoint(endpoint.trim()) // Trim whitespace
+    .setProject(projectId.trim()); // Trim whitespace
+} catch (e: any) {
+  // Catch error during client setup and make it more informative
+  throw new Error(
+    `Failed to configure Appwrite client. Endpoint used: "${endpoint}", Project ID used: "${projectId}". Original error: ${e.message}. Ensure the endpoint is a_valid_URL (e.g., https://cloud.appwrite.io/v1) and does not have extra characters or typos.`
+  );
+}
 
 const account = new Account(client);
 const databases = new Databases(client);
