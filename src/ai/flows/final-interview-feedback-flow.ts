@@ -16,7 +16,7 @@ const InterviewExchangeSchema = z.object({
   answer: z.string().describe("The user's answer to the question."),
 });
 
-export const FinalInterviewFeedbackInputSchema = z.object({
+const FinalInterviewFeedbackInputSchema = z.object({
   resume: z
     .string()
     .describe('The resume of the candidate, as a data URI.'),
@@ -31,7 +31,7 @@ const QuestionSpecificFeedbackSchema = z.object({
   specificFeedback: z.string().describe("Constructive feedback specific to this question and answer."),
 });
 
-export const FinalInterviewFeedbackOutputSchema = z.object({
+const FinalInterviewFeedbackOutputSchema = z.object({
   overallScore: z.number().min(0).max(100).describe("An overall score for the candidate's performance, out of 100."),
   overallSummary: z.string().describe("A concise overall summary of the candidate's performance, highlighting key strengths and areas for improvement."),
   detailedFeedback: z.array(QuestionSpecificFeedbackSchema).describe("An array of specific feedback for each question-answer pair from the interview."),
