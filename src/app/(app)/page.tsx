@@ -4,15 +4,24 @@ import { redirect } from 'next/navigation';
 /**
  * This page is at the root of the (app) route group.
  * Its primary purpose is to redirect users to the main dashboard page.
- * If the error "You cannot have two parallel pages that resolve to the same path"
- * persists, it's likely because Next.js detects a structural conflict between
- * this file (src/app/(app)/page.tsx) and src/app/page.tsx, both aiming for the
- * root ('/') path, during its static analysis of the file system. In such cases,
- * the content of this file (even this redirect) might not prevent the error,
- * and the file src/app/(app)/page.tsx might need to be removed.
+ * 
+ * IMPORTANT:
+ * If you are still seeing the error "You cannot have two parallel pages that 
+ * resolve to the same path" after this file has been updated and your server
+ * restarted, it means Next.js is detecting a structural conflict at the
+ * file system level. This is because both:
+ *   1. src/app/page.tsx (your marketing page)
+ *   2. src/app/(app)/page.tsx (this file, even with a redirect)
+ * are attempting to serve the root path ('/').
+ * 
+ * In such a persistent case, the most direct solution is to REMOVE this
+ * file (src/app/(app)/page.tsx) from your project. Your src/app/page.tsx
+ * will then be the sole handler for the root path. Navigation into the (app)
+ * group (e.g., to /dashboard) will occur through other means, like after login.
  */
 export default function AppRootPage() {
+  // This redirect function throws a NEXT_REDIRECT error,
+  // which Next.js catches to perform the actual navigation.
+  // This ensures this component does not attempt to render any content.
   redirect('/dashboard');
-  // The redirect function throws a NEXT_REDIRECT error,
-  // which terminates rendering of this route segment and navigates.
 }
