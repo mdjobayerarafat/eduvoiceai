@@ -11,4 +11,8 @@ export function Greeting() {
   }
 
   return (
-    <h1 className="font-headline text-3xl font-semibold
+    <h1 className="font-headline text-3xl font-semibold">
+      Welcome back, {user?.name}!
+    </h1>
+  );
+}
