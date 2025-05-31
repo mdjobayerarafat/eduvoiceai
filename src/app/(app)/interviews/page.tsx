@@ -3,6 +3,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { NextPage } from "next";
+import Image from "next/image";
 import { InterviewSetup } from "@/components/interviews/InterviewSetup";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,7 +88,6 @@ const MockInterviewPage: NextPage = () => {
       recognition.onstart = () => setIsListening(true);
       recognition.onend = () => setIsListening(false);
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        // console.error('Speech recognition error', event.error); // Removed to avoid redundant console message for handled errors
         setIsListening(false);
         let errorMsg = "Speech recognition error. Please try again.";
         if (event.error === 'no-speech') {
@@ -114,10 +114,8 @@ const MockInterviewPage: NextPage = () => {
         }
         
         if (finalTranscript.trim()) {
-             setUserAnswer(prev => prev + finalTranscript.trim() + " "); // Add space for better separation
+             setUserAnswer(prev => prev + finalTranscript.trim() + " "); 
         }
-        // For continuous interim updates, you might want to show interimTranscript in UI
-        // For this setup, we'll primarily rely on finalTranscript to build the answer
       };
       recognitionRef.current = recognition;
     }
@@ -223,12 +221,10 @@ const MockInterviewPage: NextPage = () => {
       recognitionRef.current.stop();
     } else {
       try {
-        // It's a good practice to clear the answer or part of it if continuous listening is not intended for multi-phrase answers.
-        // setUserAnswer(""); // Uncomment if you want to clear previous answer before new speech
         recognitionRef.current.start();
       } catch (e) {
          console.error("Error starting recognition:", e);
-         setIsListening(false); // Ensure listening state is reset
+         setIsListening(false); 
          let errorMsg = "Could not start voice input. ";
          if (e instanceof DOMException) {
             if (e.name === 'NotAllowedError' || e.name === 'SecurityError') {
@@ -266,7 +262,6 @@ const MockInterviewPage: NextPage = () => {
     setError(null);
 
     const currentExchange: InterviewExchange = { question: currentQuestion, answer: userAnswer.trim() };
-    setInterviewHistory(prev => [...prev, currentExchange]);
     
     try {
       const input: InterviewProgressionInput = {
@@ -277,28 +272,27 @@ const MockInterviewPage: NextPage = () => {
       const result: InterviewProgressionOutput = await getFeedbackAndNextQuestion(input);
       
       setInterviewHistory(prev => {
-          const newHistory = [...prev];
-          if (newHistory.length > 0) { 
-              newHistory[newHistory.length -1].feedback = result.feedbackOnLastAnswer;
-          }
+          const newHistory = [...prev, {...currentExchange, feedback: result.feedbackOnLastAnswer}];
           return newHistory;
       });
       
       if (isTTSEnabled && result.feedbackOnLastAnswer) {
         speakText(result.feedbackOnLastAnswer);
-        // Wait for feedback to finish speaking (or a short delay) before asking the next question
-        // This needs a more robust way to chain speech, perhaps using utterance.onend
-        const feedbackDurationEstimate = result.feedbackOnLastAnswer.length * 60; // Rough estimate
+        
+        const feedbackDurationEstimate = result.feedbackOnLastAnswer.length * 60; 
         setTimeout(() => {
             if (result.nextQuestion) {
                 setCurrentQuestion(result.nextQuestion);
                 if (isTTSEnabled) speakText(result.nextQuestion);
             }
-        }, isAISpeaking ? feedbackDurationEstimate + 200 : 0); // Add buffer if AI was already speaking
+        }, isAISpeaking ? feedbackDurationEstimate + 200 : 0); 
       } else {
          if (result.nextQuestion) {
             setCurrentQuestion(result.nextQuestion);
             if (isTTSEnabled) speakText(result.nextQuestion);
+         } else {
+            // If no next question, but there was feedback, ensure stage is set correctly
+             setCurrentQuestion(null); // No more questions
          }
       }
 
@@ -311,6 +305,7 @@ const MockInterviewPage: NextPage = () => {
       });
     } catch (err) {
       console.error("Error getting next question/feedback:", err);
+      setInterviewHistory(prev => [...prev, currentExchange]); // Add exchange even if AI call fails to show user's attempt
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to get next question: ${errorMessage}`);
       setStage("error"); 
@@ -425,10 +420,20 @@ const MockInterviewPage: NextPage = () => {
 
           <Card className="flex-grow flex flex-col overflow-hidden">
             <CardHeader className="pb-2">
-              <CardTitle className="font-headline text-xl flex items-center">
-                <MessageSquare className="mr-2 text-primary" /> AI Interviewer
-                {isAISpeaking && <Volume2 className="ml-2 h-5 w-5 text-accent animate-pulse" />}
-              </CardTitle>
+              <div className="flex items-center">
+                 <Image 
+                    src="https://placehold.co/80x80.png" 
+                    alt="AI Interviewer Profile" 
+                    width={40} 
+                    height={40} 
+                    className="rounded-full mr-3"
+                    data-ai-hint="robot avatar" 
+                  />
+                <CardTitle className="font-headline text-xl flex items-center">
+                  <MessageSquare className="mr-2 text-primary" /> AI Interviewer
+                  {isAISpeaking && <Volume2 className="ml-2 h-5 w-5 text-accent animate-pulse" />}
+                </CardTitle>
+              </div>
             </CardHeader>
             <CardContent className="flex-grow flex flex-col space-y-4 overflow-y-auto p-4">
               <ScrollArea className="flex-grow pr-2">
@@ -505,4 +510,3 @@ const MockInterviewPage: NextPage = () => {
 }
 
 export default MockInterviewPage;
-
