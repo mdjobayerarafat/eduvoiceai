@@ -9,7 +9,7 @@ if (Appwrite) {
   console.log('Appwrite.Databases exists:', typeof Appwrite.Databases !== 'undefined');
   console.log('Appwrite.Storage exists:', typeof Appwrite.Storage !== 'undefined');
   console.log('Appwrite.Avatars exists:', typeof Appwrite.Avatars !== 'undefined');
-  console.log('Appwrite.Users exists:', typeof Appwrite.Users !== 'undefined'); // This is the key check
+  console.log('Appwrite.Users exists:', typeof Appwrite.Users !== 'undefined'); // This is the key diagnostic
   console.log('Appwrite.ID exists:', typeof Appwrite.ID !== 'undefined');
 }
 
@@ -45,16 +45,18 @@ const databases = new Appwrite.Databases(client);
 const storage = new Appwrite.Storage(client);
 const avatars = new Appwrite.Avatars(client);
 
-let usersServiceInstance;
+let usersServiceInstance; // Variable to hold the Users service instance
+// Check if Appwrite.Users constructor exists before trying to instantiate it
 if (Appwrite.Users) {
   usersServiceInstance = new Appwrite.Users(client);
   console.log('Appwrite.Users service successfully instantiated.');
 } else {
   console.error('CRITICAL: Appwrite.Users constructor is not found on the imported Appwrite SDK object. The Users service cannot be initialized.');
-  // To prevent further errors, we export 'undefined' but this indicates a fundamental problem.
+  // To prevent further errors in consuming code, export 'undefined' but this indicates a fundamental problem.
   usersServiceInstance = undefined; 
 }
 
+// Re-export Appwrite utilities for convenience
 const ID = Appwrite.ID;
 const Permission = Appwrite.Permission;
 const Role = Appwrite.Role;
@@ -68,11 +70,9 @@ export const APPWRITE_DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID
 export const LECTURES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_LECTURES_COLLECTION_ID!;
 export const INTERVIEWS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_INTERVIEWS_COLLECTION_ID!;
 export const VOUCHERS_COLLECTION_ID = process.env.NEXT_PUBLIC_VOUCHERS_COLLECTION_ID;
-
 export const PROFILE_IMAGES_BUCKET_ID = process.env.NEXT_PUBLIC_APPWRITE_PROFILE_IMAGES_BUCKET_ID!;
 
 if (typeof VOUCHERS_COLLECTION_ID !== 'string' || VOUCHERS_COLLECTION_ID.trim() === '') {
-  // This was a throw, changing to warn to avoid app crash if only this is missing temporarily
   console.warn( 
     `VOUCHERS_COLLECTION_ID is not a valid string or is empty. Value: "${VOUCHERS_COLLECTION_ID}", Type: ${typeof VOUCHERS_COLLECTION_ID}. Please check your .env file and ensure your Next.js server has been restarted. Voucher functionality will be affected.`
   );
