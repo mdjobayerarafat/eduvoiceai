@@ -24,7 +24,9 @@ interface UserProfileDocument extends Models.Document {
 
 const FREE_TOKEN_ALLOWANCE = 60000;
 const VOUCHER_TOKEN_GRANT = 60000;
-const SIMULATED_SUBSCRIPTION_TOKEN_GRANT = 60000;
+// const SIMULATED_SUBSCRIPTION_TOKEN_GRANT = 60000; // No longer needed for direct simulation
+
+const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/test_aFabJ15XegELgrT3CV8og00";
 
 
 export default function SubscriptionPage() {
@@ -40,7 +42,7 @@ export default function SubscriptionPage() {
 
   const [voucherCode, setVoucherCode] = useState("");
   const [isRedeemingVoucher, setIsRedeemingVoucher] = useState(false);
-  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isProcessingStripeRedirect, setIsProcessingStripeRedirect] = useState(false);
 
 
   const fetchUserData = async () => {
@@ -110,51 +112,30 @@ export default function SubscriptionPage() {
   }, []);
 
 
-  const handleSubscribe = async () => {
+  const handleSubscribeWithStripe = () => {
     if (!userId) {
-      toast({ title: "Error", description: "User not identified. Please refresh.", variant: "destructive" });
+      toast({ title: "User Not Identified", description: "Please ensure you are logged in.", variant: "destructive" });
       return;
     }
-    setIsSubscribing(true);
-    try {
-      // Call the simulation API endpoint
-      const response = await fetch('/api/user/simulate-subscription', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
-      });
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || "Failed to simulate subscription.");
-      }
-
-      toast({
-        title: "Subscription Activated (Simulated)!",
-        description: result.message || `Successfully added ${SIMULATED_SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens and activated Pro plan.`,
-        className: "bg-green-100 border-green-300 text-green-800"
-      });
-      setTokenBalance(result.newTokenBalance);
-      setIsProSubscribed(result.newSubscriptionStatus === 'active');
-      setSubscriptionEndDate(result.newSubscriptionEndDate);
-
-    } catch (err: any) {
-      toast({
-        title: "Subscription Failed",
-        description: err.message || "An unknown error occurred while subscribing.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubscribing(false);
+    if (!STRIPE_PAYMENT_LINK) {
+      toast({ title: "Configuration Error", description: "Stripe payment link is not configured.", variant: "destructive" });
+      return;
     }
+    setIsProcessingStripeRedirect(true);
+    toast({ title: "Redirecting to Stripe...", description: "You will be redirected to our secure payment page." });
+    
+    const stripeLinkWithParams = `${STRIPE_PAYMENT_LINK}?client_reference_id=${userId}`;
+    
+    // Redirect to Stripe
+    window.location.href = stripeLinkWithParams;
   };
 
 
   const handleManageSubscription = () => {
      toast({
       title: "Manage Subscription (Conceptual)",
-      description: "This would typically redirect to a Stripe customer portal. Since payments are simulated, this button is conceptual.",
-      duration: 5000,
+      description: "For a live Stripe integration, this would redirect to a Stripe customer portal. This button is conceptual for now as payment processing is handled via Payment Links and webhooks.",
+      duration: 7000,
     });
   };
 
@@ -287,8 +268,8 @@ export default function SubscriptionPage() {
                 <CheckCircle className="h-4 w-4 text-green-600" />
                 <AlertTitle className="font-semibold">Pro Plan Active!</AlertTitle>
                 <AlertDescription>
-                    You have unlimited token usage with your Pro subscription.
-                    {subscriptionEndDate && ` Your plan renews on ${new Date(subscriptionEndDate).toLocaleDateString()}.`}
+                    Your Pro subscription is active.
+                    {subscriptionEndDate && ` Your current period ends on ${new Date(subscriptionEndDate).toLocaleDateString()}.`}
                 </AlertDescription>
             </Alert>
           )}
@@ -335,8 +316,7 @@ export default function SubscriptionPage() {
             <Zap className="mr-2 h-6 w-6 text-accent" /> EduVoice AI Pro Plan
           </CardTitle>
           <CardDescription>
-            Unlock unlimited access to all AI features with our Pro plan for $10/month.
-            This is a conceptual subscription.
+            Unlock enhanced features with our Pro plan for $10/month. Payment processed via Stripe.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -346,11 +326,11 @@ export default function SubscriptionPage() {
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-              Adds {SIMULATED_SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens to your balance upon subscription.
+              Receive a 60,000 token bonus upon successful subscription.
             </li>
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-              Token usage is effectively unlimited (deductions skipped while active).
+              Token deductions for AI features are skipped while your subscription is active.
             </li>
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
@@ -368,7 +348,7 @@ export default function SubscriptionPage() {
                  <p className="text-lg font-semibold text-green-600 flex items-center justify-center">
                     <CheckCircle className="mr-2 h-6 w-6" /> You are currently subscribed to Pro!
                 </p>
-                <Button variant="outline" onClick={handleManageSubscription} disabled={isSubscribing}>
+                <Button variant="outline" onClick={handleManageSubscription} disabled={isProcessingStripeRedirect}>
                     Manage Subscription <ExternalLink className="ml-2 h-4 w-4" />
                 </Button>
                  {subscriptionEndDate && (
@@ -378,16 +358,16 @@ export default function SubscriptionPage() {
             ) : (
               <Button
                 size="lg"
-                onClick={handleSubscribe}
+                onClick={handleSubscribeWithStripe}
                 className="w-full md:w-auto bg-accent hover:bg-accent/90 text-accent-foreground"
-                disabled={isSubscribing || isLoading}
+                disabled={isProcessingStripeRedirect || isLoading}
               >
-                {isSubscribing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                {isSubscribing ? "Processing Subscription..." : "Subscribe Now"}
+                {isProcessingStripeRedirect ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
+                {isProcessingStripeRedirect ? "Redirecting to Payment..." : "Subscribe with Stripe"}
               </Button>
             )}
-            <p className="text-xs text-muted-foreground mt-2">
-              This is a simulated payment. Clicking "Subscribe Now" will activate the Pro plan conceptually.
+             <p className="text-xs text-muted-foreground mt-2">
+                You will be redirected to Stripe to complete your payment.
             </p>
           </div>
         </CardContent>
@@ -402,14 +382,13 @@ export default function SubscriptionPage() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            <span className="font-semibold text-foreground">Tokens:</span> Your initial {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens allow for exploration. Vouchers and Pro plan activation add more tokens.
+            <span className="font-semibold text-foreground">Tokens:</span> Your initial {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens allow for exploration. Vouchers add more.
           </p>
            <p>
-            <span className="font-semibold text-foreground">Pro Plan:</span> While the Pro plan is active (subscription_status = 'active'), the token deduction API will skip actual deductions, effectively giving unlimited usage. Subscribing also grants a one-time bonus of {SIMULATED_SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens.
+            <span className="font-semibold text-foreground">Pro Plan:</span> While the Pro plan is active (confirmed via Stripe webhook), token deductions are skipped. Subscribing also grants a one-time bonus of 60,000 tokens.
           </p>
         </CardContent>
       </Card>
     </div>
   );
 }
-
