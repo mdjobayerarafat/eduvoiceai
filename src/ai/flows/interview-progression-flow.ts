@@ -2,7 +2,7 @@
 'use server';
 /**
  * @fileOverview Handles the progression of a mock interview, providing feedback on the user's last answer
- * and generating the next question. Can use user-provided Gemini API key.
+ * and generating the next question. Can use user-provided Gemini API key, with fallback.
  *
  * - getFeedbackAndNextQuestion - A function that processes the user's answer and generates feedback and the next question.
  * - InterviewProgressionInput - The input type for the getFeedbackAndNextQuestion function.
@@ -71,26 +71,59 @@ const interviewProgressionGlobalPrompt = ai.definePrompt(INTERVIEW_PROGRESSION_P
 
 async function generateFeedbackAndNextQuestionLogic(input: InterviewProgressionInput): Promise<InterviewProgressionOutput> {
   let llmResponse;
+  let userKeyFailed = false;
+
   if (input.geminiApiKey) {
-    console.log("Using user-provided Gemini API key for interview progression.");
+    console.log("Attempting to use user-provided Gemini API key for interview progression.");
     const tempAi = baseGenkit({
       plugins: [googleAI({ apiKey: input.geminiApiKey })],
       model: ai.getModel(),
     });
     const tempPrompt = tempAi.definePrompt({
       ...INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE,
-      name: `${INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE.name}_userKeyed`,
+      name: `${INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE.name}_userKeyed_${Date.now()}`,
     });
-    const { output } = await tempPrompt(input);
-    llmResponse = output;
-  } else {
-    console.log("Using platform's default API key for interview progression.");
-    const { output } = await interviewProgressionGlobalPrompt(input);
-    llmResponse = output;
+    try {
+      const { output } = await tempPrompt(input);
+      llmResponse = output;
+      console.log("Successfully used user-provided Gemini API key for interview progression.");
+    } catch (e: any) {
+      console.warn("Error using user-provided Gemini API key for interview progression:", e.message);
+      const errorMessage = (e.message || "").toLowerCase();
+      const errorStatus = e.status || e.code;
+      const errorType = (e.type || "").toLowerCase();
+      if (
+        errorMessage.includes("api key") ||
+        errorMessage.includes("permission denied") ||
+        errorMessage.includes("quota exceeded") ||
+        errorMessage.includes("authentication failed") ||
+        errorMessage.includes("invalid_request") ||
+        errorType.includes("api_key") ||
+        errorStatus === 401 || errorStatus === 403 || errorStatus === 429 ||
+        (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7)
+      ) {
+        userKeyFailed = true;
+        console.log("User's API key failed for interview progression. Attempting fallback to platform key.");
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  if (!input.geminiApiKey || userKeyFailed) {
+    if (userKeyFailed) {
+      console.log("Falling back to platform's default API key for interview progression.");
+    } else {
+      console.log("Using platform's default API key for interview progression (no user key provided or user key succeeded).");
+    }
+    if (!llmResponse) {
+        const { output } = await interviewProgressionGlobalPrompt(input);
+        llmResponse = output;
+    }
   }
 
   if (!llmResponse) {
-    throw new Error("AI model did not return the expected output for interview progression.");
+    throw new Error("AI model did not return the expected output for interview progression after all attempts.");
   }
   return llmResponse;
 }

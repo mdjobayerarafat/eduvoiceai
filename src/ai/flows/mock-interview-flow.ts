@@ -4,7 +4,7 @@
 /**
  * @fileOverview Simulates a mock interview with an AI interviewer.
  * This flow now generates the first question for a mock interview.
- * Can use user-provided Gemini API key.
+ * Can use user-provided Gemini API key, with fallback.
  *
  * - getFirstInterviewQuestion - A function that generates the first interview question.
  * - InterviewConfigInput - The input type for generating the question (resume, job description, optional API key).
@@ -53,26 +53,59 @@ const firstQuestionGlobalPrompt = ai.definePrompt(FIRST_QUESTION_PROMPT_CONFIG_B
 
 async function generateFirstQuestionLogic(input: InterviewConfigInput): Promise<FirstQuestionOutput> {
   let llmResponse;
+  let userKeyFailed = false;
+
   if (input.geminiApiKey) {
-    console.log("Using user-provided Gemini API key for first interview question.");
+    console.log("Attempting to use user-provided Gemini API key for first interview question.");
     const tempAi = baseGenkit({
       plugins: [googleAI({ apiKey: input.geminiApiKey })],
       model: ai.getModel(), 
     });
     const tempPrompt = tempAi.definePrompt({
       ...FIRST_QUESTION_PROMPT_CONFIG_BASE,
-      name: `${FIRST_QUESTION_PROMPT_CONFIG_BASE.name}_userKeyed`,
+      name: `${FIRST_QUESTION_PROMPT_CONFIG_BASE.name}_userKeyed_${Date.now()}`,
     });
-    const { output } = await tempPrompt(input);
-    llmResponse = output;
-  } else {
-    console.log("Using platform's default API key for first interview question.");
-    const { output } = await firstQuestionGlobalPrompt(input);
-    llmResponse = output;
+    try {
+      const { output } = await tempPrompt(input);
+      llmResponse = output;
+      console.log("Successfully used user-provided Gemini API key for first question.");
+    } catch (e: any) {
+      console.warn("Error using user-provided Gemini API key for first question:", e.message);
+      const errorMessage = (e.message || "").toLowerCase();
+      const errorStatus = e.status || e.code;
+      const errorType = (e.type || "").toLowerCase();
+      if (
+        errorMessage.includes("api key") ||
+        errorMessage.includes("permission denied") ||
+        errorMessage.includes("quota exceeded") ||
+        errorMessage.includes("authentication failed") ||
+        errorMessage.includes("invalid_request") ||
+        errorType.includes("api_key") ||
+        errorStatus === 401 || errorStatus === 403 || errorStatus === 429 ||
+        (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7)
+      ) {
+        userKeyFailed = true;
+        console.log("User's API key failed for first question. Attempting fallback to platform key.");
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  if (!input.geminiApiKey || userKeyFailed) {
+     if (userKeyFailed) {
+      console.log("Falling back to platform's default API key for first interview question.");
+    } else {
+      console.log("Using platform's default API key for first interview question (no user key provided or user key succeeded).");
+    }
+    if (!llmResponse) {
+        const { output } = await firstQuestionGlobalPrompt(input);
+        llmResponse = output;
+    }
   }
 
   if (!llmResponse) {
-    throw new Error("AI model did not return the expected output for the first question.");
+    throw new Error("AI model did not return the expected output for the first question after all attempts.");
   }
   return llmResponse;
 }

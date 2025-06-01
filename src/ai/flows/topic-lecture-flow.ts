@@ -4,7 +4,8 @@
 
 /**
  * @fileOverview Generates a lecture on a given topic, including summaries,
- * explanations, and relevant YouTube videos. Can use user-provided Gemini API key.
+ * explanations, and relevant YouTube videos. Can use user-provided Gemini API key,
+ * with fallback to platform key if user's key fails.
  *
  * - generateTopicLecture - A function that generates a lecture on a given topic.
  * - TopicLectureInput - The input type for the generateTopicLecture function.
@@ -30,7 +31,7 @@ const TopicLectureOutputSchema = z.object({
 export type TopicLectureOutput = z.infer<typeof TopicLectureOutputSchema>;
 
 const LECTURE_PROMPT_CONFIG_BASE = {
-  name: 'topicLecturePrompt', // Name will be suffixed if temporary
+  name: 'topicLecturePrompt',
   input: { schema: TopicLectureInputSchema },
   output: { schema: TopicLectureOutputSchema },
   prompt: `You are an AI assistant designed to generate lectures on various topics.
@@ -47,31 +48,67 @@ const LECTURE_PROMPT_CONFIG_BASE = {
   `,
 };
 
-// Global prompt instance using the global 'ai' object
 const topicLectureGlobalPrompt = ai.definePrompt(LECTURE_PROMPT_CONFIG_BASE);
 
 async function generateLectureLogic(input: TopicLectureInput): Promise<TopicLectureOutput> {
   let llmResponse;
+  let userKeyFailed = false;
+
   if (input.geminiApiKey) {
-    console.log("Using user-provided Gemini API key for lecture generation.");
+    console.log("Attempting to use user-provided Gemini API key for lecture generation.");
     const tempAi = baseGenkit({
       plugins: [googleAI({ apiKey: input.geminiApiKey })],
-      model: ai.getModel(), // Use the same model name as global config or a default like 'googleai/gemini-2.0-flash'
+      model: ai.getModel(), // Or a default like 'googleai/gemini-2.0-flash'
     });
     const tempPrompt = tempAi.definePrompt({
       ...LECTURE_PROMPT_CONFIG_BASE,
-      name: `${LECTURE_PROMPT_CONFIG_BASE.name}_userKeyed`, // Ensure unique name for temp prompt
+      name: `${LECTURE_PROMPT_CONFIG_BASE.name}_userKeyed_${Date.now()}`,
     });
-    const { output } = await tempPrompt(input);
-    llmResponse = output;
-  } else {
-    console.log("Using platform's default API key for lecture generation.");
-    const { output } = await topicLectureGlobalPrompt(input);
-    llmResponse = output;
+
+    try {
+      const { output } = await tempPrompt(input);
+      llmResponse = output;
+      console.log("Successfully used user-provided Gemini API key for lecture generation.");
+    } catch (e: any) {
+      console.warn("Error using user-provided Gemini API key for lecture:", e.message);
+      const errorMessage = (e.message || "").toLowerCase();
+      const errorStatus = e.status || e.code;
+      const errorType = (e.type || "").toLowerCase();
+
+      if (
+        errorMessage.includes("api key") ||
+        errorMessage.includes("permission denied") ||
+        errorMessage.includes("quota exceeded") ||
+        errorMessage.includes("authentication failed") ||
+        errorMessage.includes("invalid_request") || // Often for bad keys
+        errorType.includes("api_key") ||
+        errorStatus === 401 || errorStatus === 403 || errorStatus === 429 ||
+        (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) // Example: google-gax permission denied
+      ) {
+        userKeyFailed = true;
+        console.log("User's API key failed for lecture generation. Attempting fallback to platform key.");
+      } else {
+        throw e; // Re-throw if not a key-specific error
+      }
+    }
+  }
+
+  if (!input.geminiApiKey || userKeyFailed) {
+    if (userKeyFailed) {
+      console.log("Falling back to platform's default API key for lecture generation.");
+    } else {
+      console.log("Using platform's default API key for lecture generation (no user key provided or user key succeeded).");
+    }
+    // This block executes if no user key was provided OR if the user key failed and we need to fallback.
+    // If userKey was provided AND succeeded, llmResponse is already set, and this block is skipped.
+    if (!llmResponse) { 
+        const { output } = await topicLectureGlobalPrompt(input);
+        llmResponse = output;
+    }
   }
 
   if (!llmResponse) {
-    throw new Error("AI model did not return the expected output for the lecture.");
+    throw new Error("AI model did not return the expected output for the lecture after all attempts.");
   }
   return llmResponse;
 }
