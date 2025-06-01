@@ -10,24 +10,22 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Users, MoreHorizontal, Search, Filter, Download, ShieldCheck, Ban, TrendingUp, Loader2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-// Corrected import: directly import 'users'
+// Import 'users' directly (it might be undefined if Appwrite.Users fails to load)
 import { account, users, AppwriteException } from "@/lib/appwrite"; 
-import type { AppwriteUser } from "@/types/appwriteUser"; // Use the more specific type
+import type { AppwriteUser } from "@/types/appwriteUser";
 import { formatDistanceToNow } from 'date-fns';
 
 // Function to determine user status conceptually based on Appwrite data
 const getConceptualUserStatus = (user: AppwriteUser): string => {
   if (!user.status) return "Unknown"; // Appwrite's user.status is boolean (enabled/disabled)
   if (!user.emailVerification) return "Pending Verification";
-  // Conceptual: if (user.labels.includes("banned")) return "Banned";
-  // Conceptual: if (user.tokensUsed > 60000 && !user.labels.includes("subscribed")) return "Needs Subscription";
   return user.status ? "Active" : "Disabled";
 };
 
 export default function ManageUsersPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
-  const [userList, setUserList] = useState<AppwriteUser[]>([]); // Renamed to avoid conflict with imported 'users'
+  const [userList, setUserList] = useState<AppwriteUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +40,14 @@ export default function ManageUsersPage() {
           return;
         }
 
-        // Use the imported 'users' service directly
+        // Critical Check: Ensure the 'users' service is available
+        if (!users) {
+          console.error("ManageUsersPage: Appwrite Users service is not available. Check console for 'CRITICAL' errors from appwrite.ts.");
+          setError("Appwrite Users service could not be initialized. User list cannot be fetched. Please check the browser console for more details.");
+          setIsLoading(false);
+          return;
+        }
+        
         const response = await users.list(); 
         setUserList(response.users as AppwriteUser[]);
 
