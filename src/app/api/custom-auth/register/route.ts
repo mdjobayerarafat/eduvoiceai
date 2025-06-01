@@ -1,18 +1,19 @@
 
 import { NextResponse } from 'next/server';
-import { Query, AppwriteException } from 'node-appwrite';
-import { 
-  databases as appwriteDatabases, // Corrected import alias
-  // appwriteAccount, // For Appwrite Auth user creation (if you decide to use it alongside custom DB)
-  clientInitialized, 
+import {
+  databases,
+  clientInitialized,
   initializationError,
-  APPWRITE_DATABASE_ID, 
-  USERS_COLLECTION_ID 
+  APPWRITE_DATABASE_ID,
+  USERS_COLLECTION_ID,
+  Query, // Now imported from appwrite.node
+  AppwriteException // Now imported from appwrite.node
 } from '@/lib/appwrite.node';
 
 const INITIAL_FREE_TOKENS = 60000;
 
 export async function POST(request: Request) {
+  // Top-level try-catch for very unexpected errors or issues with NextResponse
   try {
     console.log("API Route (Register): /api/custom-auth/register POST request received.");
 
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
     // Main logic try-catch
     try {
       console.log(`API Route (Register): Checking for existing user in custom DB (${USERS_COLLECTION_ID}) with email: ${email}`);
-      const existingUsers = await appwriteDatabases.listDocuments(
+      const existingUsers = await databases.listDocuments( // Use 'databases'
         APPWRITE_DATABASE_ID!,
         USERS_COLLECTION_ID!,
         [Query.equal('email', email), Query.limit(1)]
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
       };
 
       console.log(`API Route (Register): Creating document in custom DB (${USERS_COLLECTION_ID}).`);
-      const newUserDocument = await appwriteDatabases.createDocument(
+      const newUserDocument = await databases.createDocument( // Use 'databases'
         APPWRITE_DATABASE_ID!,
         USERS_COLLECTION_ID!,
         'unique()', 
@@ -95,26 +96,32 @@ export async function POST(request: Request) {
       if (error instanceof AppwriteException) {
         safeErrorMessage = `Appwrite Error (${error.code || 'N/A'}): ${error.message}`;
         statusCode = typeof error.code === 'number' && error.code >= 400 && error.code < 600 ? error.code : 500;
+         if (error.code === 409 && error.type === 'document_already_exists') { // Or similar for unique constraints
+            safeErrorMessage = "A user with this email or username might already exist.";
+        }
       } else if (error instanceof Error && error.message) {
-        safeErrorMessage = error.message;
+        // For generic errors, only use the message if it's known to be safe or simple
+        safeErrorMessage = "An unexpected error occurred processing your registration.";
       } else if (typeof error === 'string') {
-        safeErrorMessage = error;
+        safeErrorMessage = error; // Should be rare
       }
       
       return NextResponse.json({ message: safeErrorMessage }, { status: statusCode });
     }
   } catch (topLevelError: any) {
     let safeTopLevelMessage = "A critical server error occurred in the registration API.";
+     // Log the original error for server-side debugging
+    console.error('API Route CRITICAL Error (Register): Unhandled exception. Original error: ', topLevelError);
+
     if (topLevelError instanceof Error && topLevelError.message) {
-      safeTopLevelMessage = `Critical error: ${topLevelError.message}`;
+      safeTopLevelMessage = `Critical error: An unexpected issue occurred.`;
     } else if (typeof topLevelError === 'string') {
-      safeTopLevelMessage = `Critical error: ${topLevelError}`;
+      safeTopLevelMessage = `Critical error: An unexpected issue occurred. Details: ${topLevelError}`;
     }
     
-    console.error('API Route CRITICAL Error (Register): Unhandled exception. Original error: ', topLevelError);
     return NextResponse.json(
         { message: safeTopLevelMessage },
-        { status: 500 }
+        { status: 500 } 
     );
   }
 }
