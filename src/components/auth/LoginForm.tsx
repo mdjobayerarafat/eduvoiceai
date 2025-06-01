@@ -29,7 +29,7 @@ const formSchema = z.object({
 });
 
 export function LoginForm() {
-  const router = useRouter();
+  const router = useRouter(); // Use the useRouter hook for navigation
   const { toast } = useToast();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -87,7 +87,7 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="w-full">
+    <Card className="w-full"> {/* Use the Card component here */}
       <CardHeader>
         <CardTitle className="font-headline text-2xl">Login (Custom DB)</CardTitle>
         <CardDescription>
