@@ -9,6 +9,7 @@ if (Appwrite) {
   console.log('Appwrite.Databases exists:', typeof Appwrite.Databases !== 'undefined');
   console.log('Appwrite.Storage exists:', typeof Appwrite.Storage !== 'undefined');
   console.log('Appwrite.Avatars exists:', typeof Appwrite.Avatars !== 'undefined');
+  console.log('Appwrite.Users exists:', typeof Appwrite.Users !== 'undefined'); // Diagnostic
   console.log('Appwrite.ID exists:', typeof Appwrite.ID !== 'undefined');
 }
 
@@ -44,6 +45,14 @@ const databases = new Appwrite.Databases(client);
 const storage = new Appwrite.Storage(client);
 const avatars = new Appwrite.Avatars(client);
 
+let usersServiceInstance;
+if (Appwrite.Users) {
+  usersServiceInstance = new Appwrite.Users(client);
+  console.log('Appwrite.Users service successfully instantiated.');
+} else {
+  console.error('CRITICAL: Appwrite.Users constructor is not found on the imported Appwrite SDK object. The Users service cannot be initialized.');
+  usersServiceInstance = undefined; 
+}
 
 
 // Re-export Appwrite utilities for convenience
@@ -54,23 +63,33 @@ const Query = Appwrite.Query;
 const AppwriteException = Appwrite.AppwriteException;
 
 // Export the instance as 'users'
-export { client, account, databases, storage, avatars, ID, Permission, Role, Query, AppwriteException };
+export { client, account, databases, storage, avatars, usersServiceInstance as users, ID, Permission, Role, Query, AppwriteException };
 
 
 export const APPWRITE_DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
-export const LECTURES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_LECTURES_COLLECTION_ID!;
-export const INTERVIEWS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_INTERVIEWS_COLLECTION_ID!;
-export const VOUCHERS_COLLECTION_ID = process.env.NEXT_PUBLIC_VOUCHERS_COLLECTION_ID;
+
+// Using specific Collection IDs provided by the user
+export const LECTURES_COLLECTION_ID = "683b410f00019daca347";
+export const INTERVIEWS_COLLECTION_ID = "683b4b0300073d4d422d";
+export const VOUCHERS_COLLECTION_ID = "683b7afb0005412f9f72";
+export const TRANSACTIONS_COLLECTION_ID = "683c0ac00011de2eaee0";
+// Note: The 'users' collection ID '683c09550030dd652653' is noted but not directly used by core auth/token logic,
+// which uses user prefs. It can be used for other custom user data.
+
 export const PROFILE_IMAGES_BUCKET_ID = process.env.NEXT_PUBLIC_APPWRITE_PROFILE_IMAGES_BUCKET_ID!;
 
-if (typeof VOUCHERS_COLLECTION_ID !== 'string' || VOUCHERS_COLLECTION_ID.trim() === '') {
-  console.warn( 
-    `VOUCHERS_COLLECTION_ID is not a valid string or is empty. Value: "${VOUCHERS_COLLECTION_ID}", Type: ${typeof VOUCHERS_COLLECTION_ID}. Please check your .env file and ensure your Next.js server has been restarted. Voucher functionality will be affected.`
-  );
-}
 
 if (typeof PROFILE_IMAGES_BUCKET_ID !== 'string' || PROFILE_IMAGES_BUCKET_ID.trim() === '') {
   console.warn( 
     `PROFILE_IMAGES_BUCKET_ID is not a valid string or is empty. Value: "${PROFILE_IMAGES_BUCKET_ID}", Type: ${typeof PROFILE_IMAGES_BUCKET_ID}. Please check your .env file and ensure your Next.js server has been restarted. Profile image functionality will be affected.`
   );
 }
+
+// Ensuring core collection IDs are valid before certain operations
+if (!LECTURES_COLLECTION_ID || !INTERVIEWS_COLLECTION_ID || !VOUCHERS_COLLECTION_ID || !TRANSACTIONS_COLLECTION_ID) {
+    console.error("One or more critical Appwrite Collection IDs are missing. Please check src/lib/appwrite.ts and ensure they are correctly set.");
+}
+if (!APPWRITE_DATABASE_ID) {
+    console.error("APPWRITE_DATABASE_ID is missing. Please set NEXT_PUBLIC_APPWRITE_DATABASE_ID in your .env file.");
+}
+
