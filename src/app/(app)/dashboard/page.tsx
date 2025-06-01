@@ -31,6 +31,7 @@ export default function DashboardPage() {
   const [recentInterviewReports, setRecentInterviewReports] = useState<DashboardActivityItem[]>([]);
   const [isLoadingInterviewReports, setIsLoadingInterviewReports] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [tokenBalance, setTokenBalance] = useState<number | null>(null);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -49,6 +50,7 @@ export default function DashboardPage() {
 
         setIsAdmin(user.labels && user.labels.includes('admin'));
         console.log('User object:', user, 'Is Admin:', isAdmin);
+        setTokenBalance((user.prefs as any)?.token_balance ?? 0); // Assuming token_balance is in prefs
         // This will only run for non-admin users now
         const userId = user.$id;
 
@@ -151,7 +153,12 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-between items-center">
       <Greeting />
+      {tokenBalance !== null && (
+        <div className="text-lg font-semibold text-primary">Tokens: {tokenBalance}</div>
+      )}
+      </div>
       <p className="text-muted-foreground">
         Explore AI-powered tools to enhance your learning and preparation.
       </p>

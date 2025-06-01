@@ -1,24 +1,68 @@
-
 "use client";
 
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle, CreditCard, ExternalLink, Info, Zap, Coins } from "lucide-react";
+import { CheckCircle, CreditCard, ExternalLink, Info, Zap, Coins, Loader2 } from "lucide-react";
+import { account } from "@/lib/appwrite";
+import type { Models } from "appwrite";
 
-// Conceptual user data: In a real app, this would come from your backend/user context via Appwrite
-const conceptualUserData = {
-  tokensUsed: 15000, // Example: 15,000 tokens used
-  isSubscribed: false, // Example: user is not subscribed
-  // In a real app, you might also have:
-  // freeTokensLastReset: new Date(), 
-  // subscriptionEndDate: new Date(),
-};
+// Define interfaces for user preferences and user data from Appwrite
+interface AppwriteUserPrefs extends Models.Preferences {
+  token_balance?: number;
+}
+
+interface AppwriteUser extends Models.User<AppwriteUserPrefs> {
+  // subscription_status and subscription_end_date are in prefs
+  // subscription_status?: string;
+  // Add other custom attributes here if needed
+}
+
 const FREE_TOKEN_ALLOWANCE = 60000;
 
 export default function SubscriptionPage() {
   const { toast } = useToast();
+  const router = useRouter();
+
+  // State for real user data
+  const [user, setUser] = useState<AppwriteUser | null>(null);
+  const [tokenBalance, setTokenBalance] = useState<number | null>(null);
+  const [isProSubscribed, setIsProSubscribed] = useState<boolean>(false);
+  const [subscriptionEndDate, setSubscriptionEndDate] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+
+  const fetchUserData = async () => {
+    setIsLoading(true);
+    setError(null); // Clear previous errors
+    try {
+      const currentUser = await account.get<AppwriteUserPrefs>();
+      setUser(currentUser as AppwriteUser); // Cast if needed
+      setTokenBalance(currentUser.prefs?.token_balance ?? 0);
+      setIsProSubscribed(currentUser.prefs?.subscription_status === 'active'); // Check subscription status from prefs
+      setSubscriptionEndDate(currentUser.prefs?.subscription_end_date ?? null); // Set end date from prefs
+
+    } catch (err) {
+      console.error("Failed to fetch user data:", err);
+      setError("Failed to load subscription data. Please try again.");
+      toast({
+          title: "Error",
+          description: "Failed to load subscription data.",
+          variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  useEffect(() => {
+    fetchUserData();
+  }, [toast]);
+
 
   const handleSubscribe = () => {
     // In a real app, this would initiate a Stripe checkout session via your backend
@@ -28,7 +72,7 @@ export default function SubscriptionPage() {
       duration: 5000,
     });
   };
-  
+
   const handleManageSubscription = () => {
     // In a real app, this would redirect to a Stripe customer portal via your backend
      toast({
@@ -38,8 +82,32 @@ export default function SubscriptionPage() {
     });
   };
 
-  const tokensRemaining = Math.max(0, FREE_TOKEN_ALLOWANCE - conceptualUserData.tokensUsed);
-  const progress = FREE_TOKEN_ALLOWANCE > 0 ? (conceptualUserData.tokensUsed / FREE_TOKEN_ALLOWANCE) * 100 : 0;
+  // Calculate tokens remaining based on the fetched tokenBalance
+  const tokensRemaining = tokenBalance !== null ? tokenBalance : FREE_TOKEN_ALLOWANCE;
+  // Calculate progress based on tokens used vs. allowance
+  const tokensUsed = FREE_TOKEN_ALLOWANCE - tokensRemaining;
+  const progress = FREE_TOKEN_ALLOWANCE > 0 ? (tokensUsed / FREE_TOKEN_ALLOWANCE) * 100 : 0;
+
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-4">Loading Subscription Info...</p>
+      </div>
+    );
+  }
+
+   if (error) {
+    return (
+      <div className="space-y-8 text-center text-destructive">
+        <h1 className="font-headline text-3xl font-semibold">Error Loading Data</h1>
+        <p>{error}</p>
+         <Button onClick={fetchUserData}>Retry</Button>
+      </div>
+    );
+  }
+
 
   return (
     <div className="space-y-8">
@@ -48,29 +116,28 @@ export default function SubscriptionPage() {
           <CreditCard className="mr-3 h-8 w-8 text-primary" /> Subscription & Usage
         </h1>
         <p className="text-muted-foreground mt-1">
-          Manage your EduVoice AI plan and track your conceptual token usage.
+          Manage your EduVoice AI plan and track your token usage.
         </p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="font-headline text-2xl flex items-center">
-            <Coins className="mr-2 h-6 w-6 text-yellow-500" /> Your Token Usage (Conceptual)
+            <Coins className="mr-2 h-6 w-6 text-yellow-500" /> Your Token Usage
           </CardTitle>
           <CardDescription>
-            You receive {FREE_TOKEN_ALLOWANCE.toLocaleString()} free tokens to explore EduVoice AI.
-            Actual token tracking and decrementing requires backend implementation with Appwrite.
+             Your current token balance for using AI features.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
             <div className="flex justify-between text-sm mb-1">
-              <span>Tokens Used: {conceptualUserData.tokensUsed.toLocaleString()}</span>
+              <span>Tokens Used: {tokensUsed.toLocaleString()}</span>
               <span>Tokens Remaining: {tokensRemaining.toLocaleString()}</span>
             </div>
             <div className="w-full bg-muted rounded-full h-3.5">
               <div
-                className="bg-primary h-3.5 rounded-full transition-all duration-500 ease-out"
+                className={`h-3.5 rounded-full transition-all duration-500 ease-out ${ tokensRemaining > 0 ? 'bg-primary' : 'bg-destructive'}`}
                 style={{ width: `${progress}%` }}
               ></div>
             </div>
@@ -78,7 +145,8 @@ export default function SubscriptionPage() {
               {progress.toFixed(1)}% of free tokens used.
             </p>
           </div>
-          {tokensRemaining === 0 && !conceptualUserData.isSubscribed && (
+          {/* Display message when tokens are zero and not subscribed */}
+          {tokensRemaining <= 0 && !isProSubscribed && (
             <Alert variant="destructive" className="bg-destructive/10 border-destructive/30 text-destructive-foreground">
               <Info className="inline h-4 w-4 mr-2" />
               You have used all your free tokens. Please subscribe to continue using AI features.
@@ -108,25 +176,28 @@ export default function SubscriptionPage() {
             </li>
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-              Priority access to new features & AI models
-            </li>
+              Priority access to new features & AI models\n            </li>
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-              Support continued development of EduVoice AI
-            </li>
+              Support continued development of EduVoice AI\n            </li>
           </ul>
           <Separator />
           <div className="text-center">
-            {conceptualUserData.isSubscribed ? (
+            {isProSubscribed ? (
               <div className="space-y-2">
                  <p className="text-lg font-semibold text-green-600 flex items-center justify-center">
                     <CheckCircle className="mr-2 h-6 w-6" /> You are currently subscribed to Pro!
                 </p>
+                {/* Link to manage subscription - will require backend */}
                 <Button variant="outline" onClick={handleManageSubscription}>
                     Manage Subscription <ExternalLink className="ml-2 h-4 w-4" />
                 </Button>
+                 {subscriptionEndDate && (
+                     <p className="text-sm text-muted-foreground">Renews on: {new Date(subscriptionEndDate).toLocaleDateString()}</p>
+                 )}
               </div>
             ) : (
+               // Show subscribe button if not subscribed
               <Button size="lg" onClick={handleSubscribe} className="w-full md:w-auto bg-accent hover:bg-accent/90 text-accent-foreground">
                 Subscribe Now with Stripe <ExternalLink className="ml-2 h-4 w-4" />
               </Button>
@@ -142,22 +213,18 @@ export default function SubscriptionPage() {
         <CardHeader>
           <CardTitle className="font-headline text-xl flex items-center">
             <Info className="mr-2 h-5 w-5 text-primary" />
-            How Tokens & Subscriptions Work (Conceptual)
-            </CardTitle>
+            How Tokens & Subscriptions Work (Conceptual)\n            </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
             <span className="font-semibold text-foreground">Tokens:</span> Units of data processed by AI models. Different actions (e.g., generating lectures, interview questions, feedback) consume tokens. Your initial {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens allow for substantial exploration.
           </p>
           <p>
-            <span className="font-semibold text-foreground">Backend Logic:</span> Real token tracking (decrementing after AI calls), enforcing limits, and managing subscription status requires robust backend implementation using Appwrite (e.g., Appwrite Functions to interact with AI APIs and update user token counts, database to store user subscription status).
-          </p>
+            <span className="font-semibold text-foreground">Backend Logic:</span> Real token tracking (decrementing after AI calls), enforcing limits, and managing subscription status requires robust backend implementation using Appwrite (e.g., Appwrite Functions to interact with AI APIs and update user token counts, database to store user subscription status).\n          </p>
           <p>
-            <span className="font-semibold text-foreground">Stripe Integration:</span> For actual subscriptions, a backend integration with Stripe is necessary to handle payments, webhooks (to update Appwrite user data on successful payment or cancellation), and manage subscription lifecycles.
-          </p>
+            <span className="font-semibold text-foreground">Stripe Integration:</span> For actual subscriptions, a backend integration with Stripe is necessary to handle payments, webhooks (to update Appwrite user data on successful payment or cancellation), and manage subscription lifecycles.\n          </p>
           <p className="text-xs text-destructive mt-2">
-             The token counts and subscription status shown on this page are currently conceptual and for UI demonstration purposes only. They do not reflect real-time data or enforce actual limits without backend implementation.
-          </p>
+             The token counts and subscription status shown on this page are currently conceptual and for UI demonstration purposes only. They do not reflect real-time data or enforce actual limits without backend implementation.\n          </p>
         </CardContent>
       </Card>
     </div>

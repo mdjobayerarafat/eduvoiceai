@@ -29,6 +29,8 @@ const formSchema = z.object({
   password: z.string().min(8, { message: "Password must be at least 8 characters." }),
 });
 
+const INITIAL_FREE_TOKENS = 60000;
+
 export function RegisterForm() {
   const router = useRouter();
   const { toast } = useToast();
@@ -43,42 +45,72 @@ export function RegisterForm() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
+    if (typeof window === 'undefined') return;
+
+    form.clearErrors(); // Clear previous errors
+
     try {
- if (typeof window !== 'undefined') {
-      await account.create('unique()', values.email, values.password, values.username);
-      toast({
-        title: "Registration Successful",
-        description: "Your account has been created. You are now logged in.",
-      });
+      const newUser = await account.create('unique()', values.email, values.password, values.username);
+      
+      // After successful registration, set initial tokens and log the user in.
+      // Then create a session
+      await account.createEmailPasswordSession(values.email, values.password);
+
+      try {
+        const tokenUpdateResponse = await fetch('/api/user/update-subscription', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: newUser.$id, 
+            token_balance: INITIAL_FREE_TOKENS,
+            subscription_status: 'free_tier', // Set initial subscription status
+          }),
+        });
+
+        if (!tokenUpdateResponse.ok) {
+          const errorData = await tokenUpdateResponse.json();
+          console.error('Failed to set initial tokens for new user:', errorData.message);
+          toast({
+            title: "Account Created, Token Init Failed",
+            description: `Your account was created, but we couldn't set your initial tokens: ${errorData.message || 'Please contact support.'}. You can still log in.`,
+            variant: "destructive",
+          });
+        } else {
+           toast({
+            title: "Registration Successful!",
+            description: `Your account has been created with ${INITIAL_FREE_TOKENS.toLocaleString()} free tokens. You are now logged in.`,
+          });
+        }
+      } catch (initError) {
+        console.error('Error calling initial token setup API:', initError);
+        toast({
+          title: "Account Created, Token Init Error",
+          description: "Your account was created, but there was an issue setting up your initial tokens. You can still log in.",
+          variant: "destructive",
+        });
+      }
       router.push("/dashboard"); 
- }
 
     } catch (error: any) {
-      console.error("Registration error object:", error); // Log the actual error object
-
       let finalErrorMessage: string;
 
       if (error instanceof AppwriteException) {
-        finalErrorMessage = error.message; // Appwrite's message is usually good
-        if (error.code === 409) { // User with the same email already exists
-            form.setError("email", { message: "This email is already registered." });
+        finalErrorMessage = error.message;
+        if (error.code === 409) { 
+            form.setError("email", { message: "This email is already registered. Try logging in." });
             finalErrorMessage = "This email is already registered. Try logging in or using a different email.";
         } else if (error.type === 'user_password_short' || error.message.toLowerCase().includes('password')) {
-             form.setError("password", { message: error.message });
+             form.setError("password", { type: "manual", message: error.message });
         } else if (error.type === 'user_name_invalid' || error.message.toLowerCase().includes('name')) {
-            form.setError("username", { message: error.message });
+            form.setError("username", { type: "manual", message: error.message });
         } else {
-            // For other Appwrite errors, set a root error
-            form.setError("root", { message: error.message });
+            form.setError("root.serverError", { type: "manual", message: error.message });
         }
       } else {
-        // Non-Appwrite Error
-        if (error && error.message) {
-          finalErrorMessage = `An unexpected error occurred: ${error.message}. Please check your network connection and Appwrite server configuration (endpoint, project ID, platform hostname).`;
-        } else {
-          finalErrorMessage = "An unexpected error occurred. Please check your network connection and Appwrite server configuration. The server might be unreachable or not configured for this domain.";
-        }
-        form.setError("root", { message: finalErrorMessage });
+        finalErrorMessage = "An unexpected error occurred. Please check your network connection and Appwrite server configuration.";
+        form.setError("root.serverError", { type: "manual", message: finalErrorMessage });
       }
 
       toast({
@@ -137,8 +169,8 @@ export function RegisterForm() {
                 </FormItem>
               )}
             />
-            {form.formState.errors.root && (
-              <FormMessage>{form.formState.errors.root.message}</FormMessage>
+            {form.formState.errors.root?.serverError && (
+              <FormMessage>{form.formState.errors.root.serverError.message}</FormMessage>
             )}
             <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
               {form.formState.isSubmitting ? "Creating Account..." : "Register"}

@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Users, MoreHorizontal, Search, Filter, Download, ShieldCheck, Ban, TrendingUp, Loader2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { account, users, AppwriteException } from "@/lib/appwrite"; 
+import { account, AppwriteException } from "@/lib/appwrite";
 import type { AppwriteUser } from "@/types/appwriteUser";
 import { formatDistanceToNow } from 'date-fns';
 
@@ -39,16 +39,9 @@ export default function ManageUsersPage() {
           return;
         }
 
-        // Critical Check: Ensure the 'users' service is available
-        if (!users) {
-          console.error("ManageUsersPage: Appwrite Users service is not available. Check console for 'CRITICAL' errors from appwrite.ts.");
-          setError("Appwrite Users service could not be initialized. User list cannot be fetched. Please check the browser console for more details from 'src/lib/appwrite.ts'.");
-          setIsLoading(false);
-          return;
-        }
-        
-        const response = await users.list(); 
-        setUserList(response.users as AppwriteUser[]);
+        const response = await fetch('/api/admin/users');
+        const data = await response.json();
+        setUserList(data.users as AppwriteUser[]);
 
       } catch (err: any) {
         console.error("Error fetching users or admin check:", err);

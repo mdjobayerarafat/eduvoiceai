@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -17,6 +17,11 @@ import type { Models } from "appwrite";
 interface UserPrefs extends Models.Preferences {
   firstName?: string;
   lastName?: string;
+  // Add new preference fields for billing/account status
+  token_balance?: number;
+  subscription_status?: string;
+  voucher_code?: string;
+  voucher_usage_count?: number;
   profileImageStorageId?: string;
 }
 
@@ -28,6 +33,11 @@ export default function ProfilePage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  
+  // State for billing/account status
+  const [tokenBalance, setTokenBalance] = useState<number | null>(null);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [voucherCode, setVoucherCode] = useState<string | null>(null);
   
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
   const [profileImageUrlPreview, setProfileImageUrlPreview] = useState<string | null>(null);
@@ -49,6 +59,11 @@ export default function ProfilePage() {
         const prefs = currentUser.prefs;
         setFirstName(prefs.firstName || "");
         setLastName(prefs.lastName || "");
+
+        // Fetch billing/account status information from preferences
+        setTokenBalance(prefs.token_balance ?? 0); // Default to 0 if not set
+        setSubscriptionStatus(prefs.subscription_status ?? null);
+        setVoucherCode(prefs.voucher_code ?? null);
         
         if (prefs.profileImageStorageId && PROFILE_IMAGES_BUCKET_ID) {
           setCurrentProfileImageStorageId(prefs.profileImageStorageId);
@@ -133,6 +148,9 @@ export default function ProfilePage() {
       const updatedPrefs: UserPrefs = {
         ...currentPrefs,
         firstName: firstName.trim(),
+        // Ensure new billing fields are included when updating prefs,
+        // even if not directly modified in this form yet.
+        // This prevents them from being removed on a save.
         lastName: lastName.trim(),
       };
       if (newProfileImageStorageId) {
@@ -298,6 +316,31 @@ export default function ProfilePage() {
             </Button>
           </CardFooter>
         </form>
+      </Card>
+
+      {/* New Card for Billing/Account Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-headline text-2xl">Account Status & Billing</CardTitle>
+          <CardDescription>View your current token balance and subscription details.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex justify-between items-center">
+            <Label>Token Balance:</Label>
+            <span className="font-semibold text-lg">{tokenBalance !== null ? tokenBalance : 'Loading...'}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <Label>Subscription Status:</Label>
+            <span className="font-semibold">{subscriptionStatus ? subscriptionStatus.replace(/_/g, ' ') : 'No active subscription'}</span>
+          </div>
+           {voucherCode && (
+             <div className="flex justify-between items-center">
+                <Label>Active Voucher:</Label>
+                <span className="font-semibold">{voucherCode}</span>
+             </div>
+           )}
+           {/* Add more details like subscription end date, voucher expiry date if available */}
+        </CardContent>
       </Card>
 
       <Card>
