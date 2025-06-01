@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { NextPage } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import { InterviewSetup } from "@/components/interviews/InterviewSetup";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -17,14 +18,14 @@ import { getFeedbackAndNextQuestion } from "@/ai/flows/interview-progression-flo
 import type { InterviewProgressionInput, InterviewProgressionOutput } from "@/ai/flows/interview-progression-flow";
 import { getFinalInterviewFeedback } from "@/ai/flows/final-interview-feedback-flow";
 import type { FinalInterviewFeedbackInput, FinalInterviewFeedbackOutput } from "@/ai/flows/final-interview-feedback-flow";
-import { account, databases, ID, Permission, Role, APPWRITE_DATABASE_ID, INTERVIEWS_COLLECTION_ID, AppwriteException } from "@/lib/appwrite";
+import { account, databases, ID, Permission, Role, APPWRITE_DATABASE_ID, INTERVIEWS_COLLECTION_ID, AppwriteException, Models } from "@/lib/appwrite";
 import type { InterviewReport, InterviewExchangeForReport } from "@/types/interviewReport";
 
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, AlertTriangle, Video, VideoOff, MessageSquare, Sparkles, Mic, MicOff, Volume2, VolumeX, TimerIcon, StopCircle, ThumbsUp, ThumbsDown, Award, Camera, CameraOff, Save } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-type InterviewStage = "setup" | "first_question_loading" | "interviewing" | "next_question_loading" | "final_feedback_loading" | "final_feedback_display" | "error";
+type InterviewStage = "setup" | "token_check_loading" | "first_question_loading" | "interviewing" | "next_question_loading" | "final_feedback_loading" | "final_feedback_display" | "error";
 
 interface InterviewExchange {
   question: string;
@@ -36,6 +37,7 @@ const speechSynthesis = (typeof window !== 'undefined' && window.speechSynthesis
 
 const INTERVIEW_DURATION_MINUTES = 10;
 const INTERVIEW_WRAP_UP_SECONDS = 30;
+const MOCK_INTERVIEW_TOKEN_COST = 1000;
 
 const MockInterviewPage: NextPage = () => {
   const [stage, setStage] = useState<InterviewStage>("setup");
@@ -233,14 +235,79 @@ const MockInterviewPage: NextPage = () => {
   }, [interviewHistory, currentQuestion, finalFeedback]);
 
   const handleSetupComplete = async (data: InterviewConfigInput) => {
-    setStage("first_question_loading");
+    setStage("token_check_loading");
     setError(null);
     setInterviewConfig(data); 
     setInterviewHistory([]);
     setFinalFeedback(null);
     setCurrentQuestion(null);
     setUserAnswer("");
-    setIsVideoEnabled(true); 
+    setIsVideoEnabled(true);
+
+    let currentUser: Models.User<Models.Preferences> | null = null;
+    try {
+      currentUser = await account.get();
+    } catch (authError) {
+      toast({ title: "Authentication Error", description: "Could not verify user. Please log in again.", variant: "destructive" });
+      setStage("setup");
+      return;
+    }
+
+    if (!currentUser?.$id) {
+      toast({ title: "Authentication Error", description: "User ID not found.", variant: "destructive" });
+      setStage("setup");
+      return;
+    }
+    const userId = currentUser.$id;
+
+    // 1. Deduct tokens
+    try {
+      const tokenResponse = await fetch('/api/user/deduct-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId, 
+          amountToDeduct: MOCK_INTERVIEW_TOKEN_COST,
+          description: `Mock Interview Start: ${data.jobDescription.substring(0, 50)}...`
+        }),
+      });
+
+      const tokenResult = await tokenResponse.json();
+
+      if (!tokenResponse.ok) {
+        if (tokenResponse.status === 402 && tokenResult.canSubscribe) {
+          toast({
+            title: "Insufficient Tokens",
+            description: `${tokenResult.message || `You need ${MOCK_INTERVIEW_TOKEN_COST} tokens for a mock interview.`} You have ${tokenResult.currentTokenBalance || 0}.`,
+            variant: "destructive",
+            action: <Button variant="outline" size="sm" asChild><Link href="/settings/subscription">Get More Tokens</Link></Button>,
+            duration: 7000,
+          });
+        } else {
+          throw new Error(tokenResult.message || "Failed to deduct tokens for interview.");
+        }
+        setStage("setup"); // Go back to setup if token deduction fails
+        return;
+      }
+      
+      toast({
+        title: tokenResult.message.includes("skipped") ? "Pro User" : "Tokens Deducted",
+        description: tokenResult.message.includes("skipped") ? `Mock interview started.` : `Successfully deducted ${tokenResult.deductedAmount} tokens. New balance: ${tokenResult.newTokenBalance}. Starting interview...`,
+      });
+
+    } catch (tokenError: any) {
+      setError(`Token deduction failed: ${tokenError.message}`);
+      toast({
+        title: "Token Error",
+        description: `Could not process token deduction for interview: ${tokenError.message}`,
+        variant: "destructive",
+      });
+      setStage("setup"); // Go back to setup
+      return;
+    }
+
+    // 2. Proceed to get first question if token deduction was successful
+    setStage("first_question_loading");
     try {
       const result: FirstQuestionOutput = await getFirstInterviewQuestion(data);
       setCurrentQuestion(result.firstQuestion);
@@ -260,6 +327,7 @@ const MockInterviewPage: NextPage = () => {
         description: "Could not fetch the first question. Please try again.",
         variant: "destructive",
       });
+      // Consider refunding tokens here
     }
   };
 
@@ -555,8 +623,8 @@ const MockInterviewPage: NextPage = () => {
           <div>
             <h1 className="font-headline text-3xl font-semibold">Mock Interview</h1>
             <p className="text-muted-foreground mt-1">
-              {stage === "setup" && "Practice your interviewing skills. Provide the job details and your resume."}
-              {(stage === "first_question_loading" || stage === "next_question_loading" || stage === "final_feedback_loading") && "Processing..."}
+              {stage === "setup" && `Practice your interviewing skills. Provide the job details and your resume. Cost: ${MOCK_INTERVIEW_TOKEN_COST} tokens.`}
+              {(stage === "token_check_loading" || stage === "first_question_loading" || stage === "next_question_loading" || stage === "final_feedback_loading") && "Processing..."}
               {stage === "interviewing" && "You're live! Answer the question below."}
               {stage === "final_feedback_display" && "Interview Complete. Review your feedback."}
               {stage === "error" && "An error occurred."}
@@ -591,22 +659,23 @@ const MockInterviewPage: NextPage = () => {
           <CardHeader>
             <CardTitle className="font-headline text-2xl">Interview Setup</CardTitle>
             <CardDescription>
-              Fill in the details below to configure your mock interview session ({INTERVIEW_DURATION_MINUTES} minutes).
+              Fill in the details below to configure your mock interview session ({INTERVIEW_DURATION_MINUTES} minutes). Cost: {MOCK_INTERVIEW_TOKEN_COST} tokens.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <InterviewSetup 
               onSetupComplete={handleSetupComplete} 
-              isProcessingSetup={stage === "first_question_loading"}
+              isProcessingSetup={stage === "first_question_loading" || stage === "token_check_loading"}
             />
           </CardContent>
         </Card>
       )}
 
-      {(stage === "first_question_loading" || stage === "next_question_loading" || stage === "final_feedback_loading") && (
+      {(stage === "token_check_loading" || stage === "first_question_loading" || stage === "next_question_loading" || stage === "final_feedback_loading") && (
         <div className="text-center py-12 flex-grow flex flex-col items-center justify-center">
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-muted-foreground">
+            {stage === "token_check_loading" && "Checking token balance..."}
             {stage === "first_question_loading" && "Generating the first question..."}
             {stage === "next_question_loading" && "Getting next question..."}
             {stage === "final_feedback_loading" && "Generating your final interview report..."}
@@ -675,7 +744,7 @@ const MockInterviewPage: NextPage = () => {
                     width={40} 
                     height={40} 
                     className="rounded-full mr-3"
-                    data-ai-hint="robot avatar" 
+                    data-ai-hint="robot avatar"
                   />
                 <CardTitle className="font-headline text-xl flex items-center">
                   <MessageSquare className="mr-2 text-primary" /> AI Interviewer
@@ -824,6 +893,3 @@ const MockInterviewPage: NextPage = () => {
 }
 
 export default MockInterviewPage;
-
-
-    

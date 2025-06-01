@@ -2,6 +2,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { TopicSelectionForm } from "@/components/lectures/TopicSelectionForm";
 import { LectureDisplay } from "@/components/lectures/LectureDisplay";
 import { generateTopicLecture } from "@/ai/flows/topic-lecture-flow";
@@ -9,11 +10,13 @@ import type { TopicLectureInput, TopicLectureOutput } from "@/ai/flows/topic-lec
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Terminal, Save } from "lucide-react";
+import { Terminal, Save, AlertTriangle } from "lucide-react";
 import { account, databases, ID, Permission, Role, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID } from "@/lib/appwrite";
 import { AppwriteException, Models } from "appwrite";
 import type { Lecture } from "@/types/lecture";
 
+
+const LECTURE_TOKEN_COST = 500;
 
 export default function LecturesPage() {
   const [lectureOutput, setLectureOutput] = useState<TopicLectureOutput | null>(null);
@@ -29,8 +32,71 @@ export default function LecturesPage() {
     setLectureOutput(null);
     setCurrentTopic(data.topic);
 
-    let generatedLecture: TopicLectureOutput | null = null;
+    let currentUser: Models.User<Models.Preferences> | null = null;
+    try {
+      currentUser = await account.get();
+    } catch (authError) {
+      toast({ title: "Authentication Error", description: "Could not verify user. Please log in again.", variant: "destructive" });
+      setIsGenerating(false);
+      return;
+    }
 
+    if (!currentUser?.$id) {
+      toast({ title: "Authentication Error", description: "User ID not found.", variant: "destructive" });
+      setIsGenerating(false);
+      return;
+    }
+    const userId = currentUser.$id;
+
+    // 1. Deduct tokens
+    try {
+      const tokenResponse = await fetch('/api/user/deduct-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId, 
+          amountToDeduct: LECTURE_TOKEN_COST,
+          description: `Lecture generation: ${data.topic}`
+        }),
+      });
+
+      const tokenResult = await tokenResponse.json();
+
+      if (!tokenResponse.ok) {
+        if (tokenResponse.status === 402 && tokenResult.canSubscribe) { // 402 Payment Required
+          toast({
+            title: "Insufficient Tokens",
+            description: `${tokenResult.message || `You need ${LECTURE_TOKEN_COST} tokens to generate a lecture.`} You have ${tokenResult.currentTokenBalance || 0}.`,
+            variant: "destructive",
+            action: <Button variant="outline" size="sm" asChild><Link href="/settings/subscription">Get More Tokens</Link></Button>,
+            duration: 7000,
+          });
+        } else {
+          throw new Error(tokenResult.message || "Failed to deduct tokens.");
+        }
+        setIsGenerating(false);
+        return;
+      }
+      
+      // Token deduction successful (or skipped for pro user)
+      toast({
+        title: tokenResult.message.includes("skipped") ? "Pro User" : "Tokens Deducted",
+        description: tokenResult.message.includes("skipped") ? `Lecture generation for "${data.topic}" started.` : `Successfully deducted ${tokenResult.deductedAmount} tokens. New balance: ${tokenResult.newTokenBalance}. Generating lecture...`,
+      });
+
+    } catch (tokenError: any) {
+      setError(`Token deduction failed: ${tokenError.message}`);
+      toast({
+        title: "Token Error",
+        description: `Could not process token deduction for lecture generation: ${tokenError.message}`,
+        variant: "destructive",
+      });
+      setIsGenerating(false);
+      return;
+    }
+
+    // 2. Generate lecture if token deduction was successful
+    let generatedLecture: TopicLectureOutput | null = null;
     try {
       generatedLecture = await generateTopicLecture(data);
       setLectureOutput(generatedLecture);
@@ -47,6 +113,7 @@ export default function LecturesPage() {
         description: `Could not generate lecture for "${data.topic}". Please try again.`,
         variant: "destructive",
       });
+      // Consider refunding tokens if generation fails after deduction - advanced feature
     } finally {
       setIsGenerating(false);
     }
@@ -96,9 +163,6 @@ export default function LecturesPage() {
         description: `Your lecture on "${currentTopic}" has been saved successfully.`,
         action: <Save className="h-5 w-5 text-green-500" />
       });
-      // Optionally clear the lecture from display after saving, or navigate away
-      // setLectureOutput(null); 
-      // setCurrentTopic("");
     } catch (err) {
       console.error("Error saving lecture:", err);
       let errorMessage = "An unknown error occurred while saving.";
@@ -110,7 +174,7 @@ export default function LecturesPage() {
       setError(`Failed to save lecture: ${errorMessage}`);
       toast({
         title: "Save Failed",
-        description: `Could not save lecture: ${errorMessage.substring(0,100)}...`, // Keep toast short
+        description: `Could not save lecture: ${errorMessage.substring(0,100)}...`,
         variant: "destructive",
       });
     } finally {
@@ -123,7 +187,7 @@ export default function LecturesPage() {
       <div>
         <h1 className="font-headline text-3xl font-semibold">AI Topic-Based Lectures</h1>
         <p className="text-muted-foreground mt-1">
-          Let AI craft detailed lectures on any subject you're curious about.
+          Let AI craft detailed lectures on any subject you're curious about. Generating a lecture costs {LECTURE_TOKEN_COST} tokens.
         </p>
       </div>
       
@@ -140,7 +204,7 @@ export default function LecturesPage() {
       {isGenerating && !lectureOutput && (
         <div className="text-center py-8">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Generating your lecture on "{currentTopic}"...</p>
+          <p className="mt-4 text-muted-foreground">Processing token deduction and generating your lecture on "{currentTopic}"...</p>
         </div>
       )}
 
