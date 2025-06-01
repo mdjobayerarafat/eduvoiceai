@@ -6,8 +6,8 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AppwriteException } from "appwrite";
-import { account } from "@/lib/appwrite"; 
+// import { AppwriteException } from "appwrite"; // No longer directly using account.create
+// import { account } from "@/lib/appwrite"; // No longer directly using account.create
 
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { OAuthButtons } from "./OAuthButtons";
+// import { OAuthButtons } from "./OAuthButtons"; // OAuth is incompatible with custom DB auth flow for now
 import { useToast } from "@/hooks/use-toast";
 
 const formSchema = z.object({
@@ -29,7 +29,7 @@ const formSchema = z.object({
   password: z.string().min(8, { message: "Password must be at least 8 characters." }),
 });
 
-const INITIAL_FREE_TOKENS = 60000;
+// const INITIAL_FREE_TOKENS = 60000; // This logic will now be in the backend API route
 
 export function RegisterForm() {
   const router = useRouter();
@@ -46,82 +46,47 @@ export function RegisterForm() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     if (typeof window === 'undefined') return;
-
     form.clearErrors(); 
 
     try {
-      const newUser = await account.create('unique()', values.email, values.password, values.username);
-      
-      await account.createEmailPasswordSession(values.email, values.password);
+      const response = await fetch('/api/custom-auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values),
+      });
 
-      try {
-        const tokenUpdateResponse = await fetch('/api/user/update-subscription', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userId: newUser.$id, 
-            token_balance: INITIAL_FREE_TOKENS,
-            subscription_status: 'free_tier', 
-          }),
-        });
+      const result = await response.json();
 
-        if (!tokenUpdateResponse.ok) {
-          let errorData = { message: "Failed to set initial tokens. Server responded with an error." };
-          try {
-            errorData = await tokenUpdateResponse.json();
-          } catch (parseErr) {
-            // If parsing JSON fails, use the status text or a generic message
-            errorData.message = `Failed to set initial tokens. Server status: ${tokenUpdateResponse.status} ${tokenUpdateResponse.statusText}`;
-          }
-          console.error('Failed to set initial tokens for new user:', errorData);
-          toast({
-            title: "Account Created, Token Init Failed",
-            description: `Your account was created, but we couldn't set your initial tokens: ${errorData.message}. Please contact support.`,
-            variant: "destructive",
-            duration: 8000, 
-          });
-        } else {
-           toast({
-            title: "Registration Successful!",
-            description: `Your account has been created with ${INITIAL_FREE_TOKENS.toLocaleString()} free tokens. You are now logged in.`,
-          });
-        }
-      } catch (initError: any) {
-        console.error('Error calling initial token setup API:', initError);
+      if (!response.ok) {
+        // Display error from API response
         toast({
-          title: "Account Created, Token Setup Network Error",
-          description: `Your account was created, but there was a network issue setting up your initial tokens: ${initError.message || 'Please check your connection or contact support.'}.`,
+          title: "Registration Failed",
+          description: result.message || "An unknown error occurred during registration.",
           variant: "destructive",
-          duration: 8000,
         });
-      }
-      router.push("/dashboard"); 
-
-    } catch (error: any) {
-      let finalErrorMessage: string;
-
-      if (error instanceof AppwriteException) {
-        finalErrorMessage = error.message;
-        if (error.code === 409) { 
-            form.setError("email", { message: "This email is already registered. Try logging in." });
-            finalErrorMessage = "This email is already registered. Try logging in or using a different email.";
-        } else if (error.type === 'user_password_short' || error.message.toLowerCase().includes('password')) {
-             form.setError("password", { type: "manual", message: error.message });
-        } else if (error.type === 'user_name_invalid' || error.message.toLowerCase().includes('name')) {
-            form.setError("username", { type: "manual", message: error.message });
-        } else {
-            form.setError("root.serverError", { type: "manual", message: error.message });
+        if (result.fieldErrors) {
+          if (result.fieldErrors.email) form.setError("email", { message: result.fieldErrors.email });
+          if (result.fieldErrors.username) form.setError("username", { message: result.fieldErrors.username });
+          // Add other field errors if your API returns them
         }
-      } else {
-        finalErrorMessage = "An unexpected error occurred. Please check your network connection and Appwrite server configuration.";
-        form.setError("root.serverError", { type: "manual", message: finalErrorMessage });
+        return;
       }
+      
+      // IMPORTANT: This illustrative example does NOT handle session creation.
+      // The user is technically registered in your custom DB but not "logged in".
+      // A real implementation would need to return a session token or similar from the API
+      // and store it securely on the client.
 
       toast({
+        title: "Registration Successful!",
+        description: `Your account has been created in our database. Please log in. (Note: Full login/session not implemented in this example).`,
+      });
+      router.push("/login"); // Redirect to login, as no session is created here
+
+    } catch (error: any) {
+      toast({
         title: "Registration Failed",
-        description: finalErrorMessage,
+        description: error.message || "An unexpected network error occurred. Please try again.",
         variant: "destructive",
       });
     }
@@ -130,8 +95,11 @@ export function RegisterForm() {
   return (
     <Card className="w-full">
       <CardHeader>
-        <CardTitle className="font-headline text-2xl">Create an Account</CardTitle>
-        <CardDescription>Join EduVoice AI to start your learning journey.</CardDescription>
+        <CardTitle className="font-headline text-2xl">Create an Account (Custom DB)</CardTitle>
+        <CardDescription>
+          Join EduVoice AI to start your learning journey. 
+          (Demo: Uses custom DB, not Appwrite Auth. Insecure password handling in this example.)
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -179,11 +147,17 @@ export function RegisterForm() {
               <FormMessage>{form.formState.errors.root.serverError.message}</FormMessage>
             )}
             <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-              {form.formState.isSubmitting ? "Creating Account..." : "Register"}
+              {form.formState.isSubmitting ? "Creating Account..." : "Register (Custom)"}
             </Button>
           </form>
         </Form>
-        <OAuthButtons />
+        {/* 
+        <OAuthButtons /> 
+        <p className="text-xs text-muted-foreground mt-2 text-center">
+          Note: OAuth buttons use Appwrite's native authentication and are not compatible
+          with this custom database registration flow. They are disabled for this example.
+        </p>
+        */}
       </CardContent>
       <CardFooter className="flex justify-center">
         <p className="text-sm text-muted-foreground">
