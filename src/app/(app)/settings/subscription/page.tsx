@@ -13,6 +13,8 @@ import { account, databases, APPWRITE_DATABASE_ID, USERS_COLLECTION_ID, Appwrite
 import type { Models } from "appwrite";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import Link from "next/link";
+
 
 interface UserProfileDocument extends Models.Document {
   email: string;
@@ -24,7 +26,6 @@ interface UserProfileDocument extends Models.Document {
 
 const FREE_TOKEN_ALLOWANCE = 60000;
 const VOUCHER_TOKEN_GRANT = 60000;
-// const SIMULATED_SUBSCRIPTION_TOKEN_GRANT = 60000; // No longer needed for direct simulation
 
 const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/test_aFabJ15XegELgrT3CV8og00";
 
@@ -54,6 +55,7 @@ export default function SubscriptionPage() {
         throw new AppwriteException("User not authenticated.", 401, "user_unauthorized");
       }
       setUserId(currentUser.$id);
+      console.log("SubscriptionPage: Fetched Appwrite User ID for Stripe:", currentUser.$id); // Log User ID
 
       if (!APPWRITE_DATABASE_ID || !USERS_COLLECTION_ID) {
         throw new Error("Appwrite Database ID or Users Collection ID is not configured.");
@@ -114,7 +116,7 @@ export default function SubscriptionPage() {
 
   const handleSubscribeWithStripe = () => {
     if (!userId) {
-      toast({ title: "User Not Identified", description: "Please ensure you are logged in.", variant: "destructive" });
+      toast({ title: "User Not Identified", description: "Please ensure you are logged in and user data is loaded. Refresh if needed.", variant: "destructive" });
       return;
     }
     if (!STRIPE_PAYMENT_LINK) {
@@ -124,9 +126,11 @@ export default function SubscriptionPage() {
     setIsProcessingStripeRedirect(true);
     toast({ title: "Redirecting to Stripe...", description: "You will be redirected to our secure payment page." });
     
-    const stripeLinkWithParams = `${STRIPE_PAYMENT_LINK}?client_reference_id=${userId}`;
+    // IMPORTANT: Ensure `userId` is correctly passed to Stripe.
+    // Stripe will use this as `client_reference_id` and pass it back to your success_url and webhook.
+    console.log(`SubscriptionPage: Redirecting to Stripe with client_reference_id: "${userId}"`);
+    const stripeLinkWithParams = `${STRIPE_PAYMENT_LINK}?client_reference_id=${encodeURIComponent(userId)}`;
     
-    // Redirect to Stripe
     window.location.href = stripeLinkWithParams;
   };
 
@@ -367,7 +371,7 @@ export default function SubscriptionPage() {
               </Button>
             )}
              <p className="text-xs text-muted-foreground mt-2">
-                You will be redirected to Stripe to complete your payment.
+                You will be redirected to Stripe to complete your payment. Ensure Success URL in Stripe Payment Link is: YOUR_APP_URL/api/stripe/confirm-success
             </p>
           </div>
         </CardContent>
@@ -385,10 +389,11 @@ export default function SubscriptionPage() {
             <span className="font-semibold text-foreground">Tokens:</span> Your initial {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens allow for exploration. Vouchers add more.
           </p>
            <p>
-            <span className="font-semibold text-foreground">Pro Plan:</span> While the Pro plan is active (confirmed via Stripe webhook), token deductions are skipped. Subscribing also grants a one-time bonus of 60,000 tokens.
+            <span className="font-semibold text-foreground">Pro Plan:</span> While the Pro plan is active (confirmed via Stripe webhook or success redirect), token deductions are skipped. Subscribing also grants a one-time bonus of 60,000 tokens.
           </p>
         </CardContent>
       </Card>
     </div>
   );
 }
+
