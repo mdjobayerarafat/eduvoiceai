@@ -25,6 +25,8 @@ interface UserProfileDocument extends Models.Document {
 
 const FREE_TOKEN_ALLOWANCE = 60000; 
 const VOUCHER_TOKEN_GRANT = 60000;
+const SUBSCRIPTION_TOKEN_GRANT = 60000;
+
 
 export default function SubscriptionPage() {
   const { toast } = useToast();
@@ -39,6 +41,7 @@ export default function SubscriptionPage() {
 
   const [voucherCode, setVoucherCode] = useState("");
   const [isRedeemingVoucher, setIsRedeemingVoucher] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
 
   const fetchUserData = async () => {
@@ -99,13 +102,46 @@ export default function SubscriptionPage() {
   }, []); 
 
 
-  const handleSubscribe = () => {
-    toast({
-      title: "Stripe Integration Needed",
-      description: "This would typically redirect you to Stripe to complete your subscription. Backend integration with Stripe is required.",
-      duration: 5000,
-    });
+  const handleSubscribe = async () => {
+    if (!userId) {
+      toast({ title: "Error", description: "User not identified. Please refresh.", variant: "destructive" });
+      return;
+    }
+    setIsSubscribing(true);
+    try {
+      const response = await fetch('/api/stripe/confirm-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to confirm subscription.");
+      }
+
+      toast({
+        title: "Subscription Activated!",
+        description: result.message || `Successfully added ${SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens and activated Pro plan.`,
+        className: "bg-green-100 border-green-300 text-green-800"
+      });
+      setTokenBalance(result.newTokenBalance);
+      setIsProSubscribed(result.newSubscriptionStatus === 'active');
+      setSubscriptionEndDate(result.newSubscriptionEndDate);
+      // Optionally, re-fetch all user data to ensure complete consistency
+      // await fetchUserData(); 
+
+    } catch (err: any) {
+      toast({
+        title: "Subscription Failed",
+        description: err.message || "An unknown error occurred while subscribing.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubscribing(false);
+    }
   };
+
 
   const handleManageSubscription = () => {
      toast({
@@ -145,7 +181,8 @@ export default function SubscriptionPage() {
       });
       setTokenBalance(result.newTokenBalance); // Update token balance from API response
       setVoucherCode(""); // Clear input
-      await fetchUserData(); // Re-fetch user data to get latest balance and potentially other statuses
+      // Re-fetch user data to get latest balance and potentially other statuses
+      // await fetchUserData(); 
 
     } catch (err: any) {
       toast({
@@ -208,7 +245,7 @@ export default function SubscriptionPage() {
             <Coins className="mr-2 h-6 w-6 text-yellow-500" /> Your Token Usage
           </CardTitle>
           <CardDescription>
-             Your current token balance for using AI features. Initial free allowance is {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens. Vouchers grant {VOUCHER_TOKEN_GRANT.toLocaleString()} tokens.
+             Your current token balance for using AI features. Initial free allowance is {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens. Vouchers and subscriptions grant more tokens.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -221,7 +258,7 @@ export default function SubscriptionPage() {
                 <span>Initial Free Tokens Used: {displayTokensUsed.toLocaleString()} / {FREE_TOKEN_ALLOWANCE.toLocaleString()}</span>
               )}
             </div>
-            {!isProSubscribed && (
+            {!isProSubscribed && tokenBalance !== null && (
                 <div className="w-full bg-muted rounded-full h-3.5">
                 <div
                     className={`h-3.5 rounded-full transition-all duration-500 ease-out ${ displayTokensRemaining > 0 ? 'bg-primary' : 'bg-destructive'}`}
@@ -229,7 +266,7 @@ export default function SubscriptionPage() {
                 ></div>
                 </div>
             )}
-            {!isProSubscribed && (
+             {!isProSubscribed && tokenBalance !== null && (
                 <p className="text-xs text-muted-foreground mt-1 text-center">
                 {displayTokensRemaining > 0 ? `${Math.min(100, (displayTokensRemaining / FREE_TOKEN_ALLOWANCE) * 100).toFixed(1)}% of initial free tokens remaining.` : "No free tokens remaining."}
                 </p>
@@ -295,7 +332,7 @@ export default function SubscriptionPage() {
           </CardTitle>
           <CardDescription>
             Unlock unlimited access to all AI features with our Pro plan for $10/month.
-            Requires backend integration with Stripe for payments.
+            This is a conceptual subscription.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -305,15 +342,19 @@ export default function SubscriptionPage() {
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-              Unlimited token usage for all AI features
+              Adds {SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens to your balance upon subscription.
             </li>
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-              Priority access to new features & AI models
+              Token usage is effectively unlimited (deductions skipped while active).
             </li>
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-              Support continued development of EduVoice AI
+              Priority access to new features & AI models (conceptual).
+            </li>
+            <li className="flex items-center">
+              <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
+              Support continued development of EduVoice AI.
             </li>
           </ul>
           <Separator />
@@ -323,7 +364,7 @@ export default function SubscriptionPage() {
                  <p className="text-lg font-semibold text-green-600 flex items-center justify-center">
                     <CheckCircle className="mr-2 h-6 w-6" /> You are currently subscribed to Pro!
                 </p>
-                <Button variant="outline" onClick={handleManageSubscription}>
+                <Button variant="outline" onClick={handleManageSubscription} disabled={isSubscribing}>
                     Manage Subscription <ExternalLink className="ml-2 h-4 w-4" />
                 </Button>
                  {subscriptionEndDate && (
@@ -331,12 +372,18 @@ export default function SubscriptionPage() {
                  )}
               </div>
             ) : (
-              <Button size="lg" onClick={handleSubscribe} className="w-full md:w-auto bg-accent hover:bg-accent/90 text-accent-foreground">
-                Subscribe Now with Stripe <ExternalLink className="ml-2 h-4 w-4" />
+              <Button 
+                size="lg" 
+                onClick={handleSubscribe} 
+                className="w-full md:w-auto bg-accent hover:bg-accent/90 text-accent-foreground"
+                disabled={isSubscribing || isLoading}
+              >
+                {isSubscribing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+                {isSubscribing ? "Processing Subscription..." : "Subscribe Now"}
               </Button>
             )}
             <p className="text-xs text-muted-foreground mt-2">
-              Payments would be securely processed by Stripe. You can cancel anytime.
+              Actual payments would be securely processed by Stripe. You can cancel anytime.
             </p>
           </div>
         </CardContent>
@@ -351,13 +398,16 @@ export default function SubscriptionPage() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            <span className="font-semibold text-foreground">Tokens:</span> Units of data processed by AI models. Your initial {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens allow for exploration. Vouchers can add more tokens. Pro plan gives unlimited tokens.
+            <span className="font-semibold text-foreground">Tokens:</span> Your initial {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens allow for exploration. Vouchers and Pro plan activation add more tokens.
+          </p>
+           <p>
+            <span className="font-semibold text-foreground">Pro Plan:</span> While the Pro plan is active (subscription\_status = 'active'), the token deduction API will skip actual deductions, effectively giving unlimited usage. Subscribing also grants a one-time bonus of {SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens.
           </p>
           <p>
             <span className="font-semibold text-foreground">Backend Logic:</span> Real token tracking, enforcing limits, and managing subscription status requires backend implementation using Appwrite Functions to interact with AI APIs, update user token counts, and manage subscription status based on Stripe webhooks.
           </p>
           <p>
-            <span className="font-semibold text-foreground">Stripe Integration:</span> For actual subscriptions, a backend integration with Stripe is necessary to handle payments and subscription lifecycles, which then updates user data in Appwrite.
+            <span className="font-semibold text-foreground">Stripe Integration:</span> For actual subscriptions, a backend integration with Stripe is necessary to handle payments and subscription lifecycles, which then updates user data in Appwrite. This implementation simulates the post-payment confirmation step.
           </p>
         </CardContent>
       </Card>
@@ -365,4 +415,3 @@ export default function SubscriptionPage() {
   );
 }
 
-    
