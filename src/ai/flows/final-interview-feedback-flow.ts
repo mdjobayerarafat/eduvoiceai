@@ -2,14 +2,17 @@
 'use server';
 /**
  * @fileOverview Generates final feedback and a score for a completed mock interview.
+ * Can use user-provided Gemini API key.
  *
  * - getFinalInterviewFeedback - A function that processes the entire interview and generates overall feedback and score.
  * - FinalInterviewFeedbackInput - The input type for the getFinalInterviewFeedback function.
  * - FinalInterviewFeedbackOutput - The return type for the getFinalInterviewFeedback function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { genkit as baseGenkit } from 'genkit';
+import { googleAI } from '@genkit-ai/googleai';
+import { ai } from '@/ai/genkit'; // Global AI instance
+import { z } from 'genkit';
 
 const InterviewExchangeSchema = z.object({
   question: z.string().describe("The question asked by the AI interviewer."),
@@ -22,6 +25,7 @@ const FinalInterviewFeedbackInputSchema = z.object({
     .describe('The resume of the candidate, as a data URI.'),
   jobDescription: z.string().describe('The job description for the role.'),
   fullInterviewHistory: z.array(InterviewExchangeSchema).describe('The complete history of questions asked and answers given during the interview.'),
+  geminiApiKey: z.string().optional().describe('Optional Google Gemini API key to use for this request.'),
 });
 export type FinalInterviewFeedbackInput = z.infer<typeof FinalInterviewFeedbackInputSchema>;
 
@@ -40,14 +44,10 @@ const FinalInterviewFeedbackOutputSchema = z.object({
 });
 export type FinalInterviewFeedbackOutput = z.infer<typeof FinalInterviewFeedbackOutputSchema>;
 
-export async function getFinalInterviewFeedback(input: FinalInterviewFeedbackInput): Promise<FinalInterviewFeedbackOutput> {
-  return finalInterviewFeedbackFlow(input);
-}
-
-const finalInterviewFeedbackPrompt = ai.definePrompt({
+const FINAL_FEEDBACK_PROMPT_CONFIG_BASE = {
   name: 'finalInterviewFeedbackPrompt',
-  input: {schema: FinalInterviewFeedbackInputSchema},
-  output: {schema: FinalInterviewFeedbackOutputSchema},
+  input: { schema: FinalInterviewFeedbackInputSchema },
+  output: { schema: FinalInterviewFeedbackOutputSchema },
   prompt: `You are an AI career coach. The candidate has just completed a mock interview.
 The candidate's resume, the job description for the role they interviewed for, and the full transcript of the interview are provided below.
 
@@ -74,7 +74,35 @@ Your tasks are to:
 
 Respond strictly in the specified JSON output format. Ensure the 'overallScore' is a number between 0 and 100, and each 'questionScore' is a number between 0 and 10.
 `,
-});
+};
+
+const finalInterviewFeedbackGlobalPrompt = ai.definePrompt(FINAL_FEEDBACK_PROMPT_CONFIG_BASE);
+
+async function generateFinalFeedbackLogic(input: FinalInterviewFeedbackInput): Promise<FinalInterviewFeedbackOutput> {
+  let llmResponse;
+  if (input.geminiApiKey) {
+    console.log("Using user-provided Gemini API key for final interview feedback.");
+    const tempAi = baseGenkit({
+      plugins: [googleAI({ apiKey: input.geminiApiKey })],
+      model: ai.getModel(),
+    });
+    const tempPrompt = tempAi.definePrompt({
+      ...FINAL_FEEDBACK_PROMPT_CONFIG_BASE,
+      name: `${FINAL_FEEDBACK_PROMPT_CONFIG_BASE.name}_userKeyed`,
+    });
+    const { output } = await tempPrompt(input);
+    llmResponse = output;
+  } else {
+    console.log("Using platform's default API key for final interview feedback.");
+    const { output } = await finalInterviewFeedbackGlobalPrompt(input);
+    llmResponse = output;
+  }
+
+  if (!llmResponse) {
+    throw new Error("The AI model did not return the expected output for final interview feedback.");
+  }
+  return llmResponse;
+}
 
 const finalInterviewFeedbackFlow = ai.defineFlow(
   {
@@ -82,11 +110,9 @@ const finalInterviewFeedbackFlow = ai.defineFlow(
     inputSchema: FinalInterviewFeedbackInputSchema,
     outputSchema: FinalInterviewFeedbackOutputSchema,
   },
-  async (input) => {
-    const {output} = await finalInterviewFeedbackPrompt(input);
-    if (!output) {
-      throw new Error("The AI model did not return the expected output for final interview feedback.");
-    }
-    return output;
-  }
+  generateFinalFeedbackLogic
 );
+
+export async function getFinalInterviewFeedback(input: FinalInterviewFeedbackInput): Promise<FinalInterviewFeedbackOutput> {
+  return finalInterviewFeedbackFlow(input);
+}

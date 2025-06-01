@@ -4,20 +4,24 @@
 /**
  * @fileOverview Simulates a mock interview with an AI interviewer.
  * This flow now generates the first question for a mock interview.
+ * Can use user-provided Gemini API key.
  *
  * - getFirstInterviewQuestion - A function that generates the first interview question.
- * - InterviewConfigInput - The input type for generating the question (resume, job description).
+ * - InterviewConfigInput - The input type for generating the question (resume, job description, optional API key).
  * - FirstQuestionOutput - The return type, containing the first question.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { genkit as baseGenkit } from 'genkit';
+import { googleAI } from '@genkit-ai/googleai';
+import { ai } from '@/ai/genkit'; // Global AI instance
+import { z } from 'genkit';
 
 const InterviewConfigInputSchema = z.object({
   resume: z
     .string()
     .describe('The resume of the candidate, as a data URI that must include a MIME type and use Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.'),
   jobDescription: z.string().describe('The job description for the role the candidate is interviewing for.'),
+  geminiApiKey: z.string().optional().describe('Optional Google Gemini API key to use for this request.'),
 });
 export type InterviewConfigInput = z.infer<typeof InterviewConfigInputSchema>;
 
@@ -26,14 +30,10 @@ const FirstQuestionOutputSchema = z.object({
 });
 export type FirstQuestionOutput = z.infer<typeof FirstQuestionOutputSchema>;
 
-export async function getFirstInterviewQuestion(input: InterviewConfigInput): Promise<FirstQuestionOutput> {
-  return firstQuestionFlow(input);
-}
-
-const firstQuestionPrompt = ai.definePrompt({
+const FIRST_QUESTION_PROMPT_CONFIG_BASE = {
   name: 'firstQuestionPrompt',
-  input: {schema: InterviewConfigInputSchema},
-  output: {schema: FirstQuestionOutputSchema},
+  input: { schema: InterviewConfigInputSchema },
+  output: { schema: FirstQuestionOutputSchema },
   prompt: `You are an AI Interviewer.
 Based on the candidate's resume and the provided job description, your task is to:
 1. Start with a brief, professional opening greeting (e.g., "Hello! I'm your AI interviewer for today. Let's begin with your first question.").
@@ -47,7 +47,35 @@ Candidate's Resume:
 
 Please provide the greeting followed by the first question as a single string.
 `,
-});
+};
+
+const firstQuestionGlobalPrompt = ai.definePrompt(FIRST_QUESTION_PROMPT_CONFIG_BASE);
+
+async function generateFirstQuestionLogic(input: InterviewConfigInput): Promise<FirstQuestionOutput> {
+  let llmResponse;
+  if (input.geminiApiKey) {
+    console.log("Using user-provided Gemini API key for first interview question.");
+    const tempAi = baseGenkit({
+      plugins: [googleAI({ apiKey: input.geminiApiKey })],
+      model: ai.getModel(), 
+    });
+    const tempPrompt = tempAi.definePrompt({
+      ...FIRST_QUESTION_PROMPT_CONFIG_BASE,
+      name: `${FIRST_QUESTION_PROMPT_CONFIG_BASE.name}_userKeyed`,
+    });
+    const { output } = await tempPrompt(input);
+    llmResponse = output;
+  } else {
+    console.log("Using platform's default API key for first interview question.");
+    const { output } = await firstQuestionGlobalPrompt(input);
+    llmResponse = output;
+  }
+
+  if (!llmResponse) {
+    throw new Error("AI model did not return the expected output for the first question.");
+  }
+  return llmResponse;
+}
 
 const firstQuestionFlow = ai.defineFlow(
   {
@@ -55,8 +83,9 @@ const firstQuestionFlow = ai.defineFlow(
     inputSchema: InterviewConfigInputSchema,
     outputSchema: FirstQuestionOutputSchema,
   },
-  async (input) => {
-    const {output} = await firstQuestionPrompt(input);
-    return output!;
-  }
+  generateFirstQuestionLogic
 );
+
+export async function getFirstInterviewQuestion(input: InterviewConfigInput): Promise<FirstQuestionOutput> {
+  return firstQuestionFlow(input);
+}

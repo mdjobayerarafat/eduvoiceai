@@ -10,7 +10,7 @@ import type { TopicLectureInput, TopicLectureOutput } from "@/ai/flows/topic-lec
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Terminal, Save, AlertTriangle } from "lucide-react";
+import { Terminal, Save, AlertTriangle, Loader2 } from "lucide-react"; // Added Loader2
 import { account, databases, ID, Permission, Role, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID } from "@/lib/appwrite";
 import { AppwriteException, Models } from "appwrite";
 import type { Lecture } from "@/types/lecture";
@@ -26,7 +26,7 @@ export default function LecturesPage() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const handleSubmitTopic = async (data: TopicLectureInput) => {
+  const handleSubmitTopic = async (data: { topic: string }) => { // Modified to accept simpler data from form
     setIsGenerating(true);
     setError(null);
     setLectureOutput(null);
@@ -53,8 +53,8 @@ export default function LecturesPage() {
       const tokenResponse = await fetch('/api/user/deduct-tokens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          userId, 
+        body: JSON.stringify({
+          userId,
           amountToDeduct: LECTURE_TOKEN_COST,
           description: `Lecture generation: ${data.topic}`
         }),
@@ -63,7 +63,7 @@ export default function LecturesPage() {
       const tokenResult = await tokenResponse.json();
 
       if (!tokenResponse.ok) {
-        if (tokenResponse.status === 402 && tokenResult.canSubscribe) { // 402 Payment Required
+        if (tokenResponse.status === 402 && tokenResult.canSubscribe) {
           toast({
             title: "Insufficient Tokens",
             description: `${tokenResult.message || `You need ${LECTURE_TOKEN_COST} tokens to generate a lecture.`} You have ${tokenResult.currentTokenBalance || 0}.`,
@@ -78,7 +78,6 @@ export default function LecturesPage() {
         return;
       }
       
-      // Token deduction successful (or skipped for pro user)
       toast({
         title: tokenResult.message.includes("skipped") ? "Pro User" : "Tokens Deducted",
         description: tokenResult.message.includes("skipped") ? `Lecture generation for "${data.topic}" started.` : `Successfully deducted ${tokenResult.deductedAmount} tokens. New balance: ${tokenResult.newTokenBalance}. Generating lecture...`,
@@ -95,10 +94,30 @@ export default function LecturesPage() {
       return;
     }
 
-    // 2. Generate lecture if token deduction was successful
+    // 2. Retrieve user's Gemini API key from localStorage
+    let userGeminiApiKey: string | undefined = undefined;
+    try {
+      const savedKeysRaw = localStorage.getItem("eduvoice_api_keys");
+      if (savedKeysRaw) {
+        const savedKeys = JSON.parse(savedKeysRaw);
+        if (savedKeys.geminiApiKey) {
+          userGeminiApiKey = savedKeys.geminiApiKey;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not read API keys from localStorage", e);
+    }
+
+    // 3. Prepare input for Genkit flow
+    const lectureInput: TopicLectureInput = {
+      topic: data.topic,
+      ...(userGeminiApiKey && { geminiApiKey: userGeminiApiKey }), // Add key if present
+    };
+
+    // 4. Generate lecture if token deduction was successful
     let generatedLecture: TopicLectureOutput | null = null;
     try {
-      generatedLecture = await generateTopicLecture(data);
+      generatedLecture = await generateTopicLecture(lectureInput);
       setLectureOutput(generatedLecture);
       toast({
         title: "Lecture Generated!",
@@ -110,10 +129,9 @@ export default function LecturesPage() {
       setError(`Failed to generate lecture: ${errorMessage}`);
       toast({
         title: "Generation Failed",
-        description: `Could not generate lecture for "${data.topic}". Please try again.`,
+        description: `Could not generate lecture for "${data.topic}". Please try again. ${userGeminiApiKey ? "(Used your API key)" : ""}`,
         variant: "destructive",
       });
-      // Consider refunding tokens if generation fails after deduction - advanced feature
     } finally {
       setIsGenerating(false);
     }
@@ -134,7 +152,7 @@ export default function LecturesPage() {
       }
       const userId = user.$id;
 
-      const lectureDataToSave = {
+      const lectureDataToSave: Omit<Lecture, keyof Models.Document | '$databaseId' | '$collectionId' | '$permissions'> = {
         userId: userId,
         topic: currentTopic,
         lectureContent: lectureOutput.lectureContent,
@@ -195,7 +213,7 @@ export default function LecturesPage() {
 
       {error && (
         <Alert variant="destructive">
-          <Terminal className="h-4 w-4" />
+          <AlertTriangle className="h-4 w-4 mr-2" />
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
@@ -203,7 +221,7 @@ export default function LecturesPage() {
 
       {isGenerating && !lectureOutput && (
         <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-muted-foreground">Processing token deduction and generating your lecture on "{currentTopic}"...</p>
         </div>
       )}
@@ -214,7 +232,7 @@ export default function LecturesPage() {
           <div className="text-center mt-6">
             <Button onClick={handleSaveLecture} disabled={isSaving || isGenerating} size="lg">
               {isSaving ? (
-                <><Terminal className="mr-2 h-4 w-4 animate-spin" />Saving Lecture...</>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving Lecture...</>
               ) : (
                 <><Save className="mr-2 h-4 w-4" /> Save Lecture to My Library</>
               )}

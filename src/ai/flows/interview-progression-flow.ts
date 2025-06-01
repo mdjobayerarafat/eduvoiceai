@@ -2,15 +2,17 @@
 'use server';
 /**
  * @fileOverview Handles the progression of a mock interview, providing feedback on the user's last answer
- * and generating the next question.
+ * and generating the next question. Can use user-provided Gemini API key.
  *
  * - getFeedbackAndNextQuestion - A function that processes the user's answer and generates feedback and the next question.
  * - InterviewProgressionInput - The input type for the getFeedbackAndNextQuestion function.
  * - InterviewProgressionOutput - The return type for the getFeedbackAndNextQuestion function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { genkit as baseGenkit } from 'genkit';
+import { googleAI } from '@genkit-ai/googleai';
+import { ai } from '@/ai/genkit'; // Global AI instance
+import { z } from 'genkit';
 
 const InterviewExchangeSchema = z.object({
   question: z.string().describe("The question asked by the AI interviewer."),
@@ -23,6 +25,7 @@ const InterviewProgressionInputSchema = z.object({
     .describe('The resume of the candidate, as a data URI.'),
   jobDescription: z.string().describe('The job description for the role.'),
   interviewHistory: z.array(InterviewExchangeSchema).describe('A history of questions asked and answers given so far in the interview. The last item is the most recent exchange.'),
+  geminiApiKey: z.string().optional().describe('Optional Google Gemini API key to use for this request.'),
 });
 export type InterviewProgressionInput = z.infer<typeof InterviewProgressionInputSchema>;
 
@@ -32,14 +35,10 @@ const InterviewProgressionOutputSchema = z.object({
 });
 export type InterviewProgressionOutput = z.infer<typeof InterviewProgressionOutputSchema>;
 
-export async function getFeedbackAndNextQuestion(input: InterviewProgressionInput): Promise<InterviewProgressionOutput> {
-  return interviewProgressionFlow(input);
-}
-
-const interviewProgressionPrompt = ai.definePrompt({
+const INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE = {
   name: 'interviewProgressionPrompt',
-  input: {schema: InterviewProgressionInputSchema},
-  output: {schema: InterviewProgressionOutputSchema},
+  input: { schema: InterviewProgressionInputSchema },
+  output: { schema: InterviewProgressionOutputSchema },
   prompt: `You are an AI Interviewer conducting a mock interview.
 The candidate's resume and the job description are provided below.
 You also have the history of questions you've asked and the candidate's answers.
@@ -66,7 +65,35 @@ Your tasks are:
 
 Respond with only the feedback and the next question in the specified output format.
 `,
-});
+};
+
+const interviewProgressionGlobalPrompt = ai.definePrompt(INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE);
+
+async function generateFeedbackAndNextQuestionLogic(input: InterviewProgressionInput): Promise<InterviewProgressionOutput> {
+  let llmResponse;
+  if (input.geminiApiKey) {
+    console.log("Using user-provided Gemini API key for interview progression.");
+    const tempAi = baseGenkit({
+      plugins: [googleAI({ apiKey: input.geminiApiKey })],
+      model: ai.getModel(),
+    });
+    const tempPrompt = tempAi.definePrompt({
+      ...INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE,
+      name: `${INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE.name}_userKeyed`,
+    });
+    const { output } = await tempPrompt(input);
+    llmResponse = output;
+  } else {
+    console.log("Using platform's default API key for interview progression.");
+    const { output } = await interviewProgressionGlobalPrompt(input);
+    llmResponse = output;
+  }
+
+  if (!llmResponse) {
+    throw new Error("AI model did not return the expected output for interview progression.");
+  }
+  return llmResponse;
+}
 
 const interviewProgressionFlow = ai.defineFlow(
   {
@@ -74,8 +101,9 @@ const interviewProgressionFlow = ai.defineFlow(
     inputSchema: InterviewProgressionInputSchema,
     outputSchema: InterviewProgressionOutputSchema,
   },
-  async (input) => {
-    const {output} = await interviewProgressionPrompt(input);
-    return output!;
-  }
+  generateFeedbackAndNextQuestionLogic
 );
+
+export async function getFeedbackAndNextQuestion(input: InterviewProgressionInput): Promise<InterviewProgressionOutput> {
+  return interviewProgressionFlow(input);
+}
