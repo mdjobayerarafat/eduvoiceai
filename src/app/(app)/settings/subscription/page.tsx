@@ -14,18 +14,17 @@ import type { Models } from "appwrite";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-// Define a more specific type for the document fetched from USERS_COLLECTION_ID
 interface UserProfileDocument extends Models.Document {
   email: string;
   username: string;
   token_balance?: number;
   subscription_status?: "trial" | "active" | "cancelled" | "past_due";
-  subscription_end_date?: string; // ISO date string
+  subscription_end_date?: string; 
 }
 
 const FREE_TOKEN_ALLOWANCE = 60000;
 const VOUCHER_TOKEN_GRANT = 60000;
-const SUBSCRIPTION_TOKEN_GRANT = 60000;
+const SIMULATED_SUBSCRIPTION_TOKEN_GRANT = 60000;
 
 
 export default function SubscriptionPage() {
@@ -69,7 +68,6 @@ export default function SubscriptionPage() {
       setSubscriptionEndDate(userProfileDoc.subscription_end_date ?? null);
 
     } catch (err: any) {
-      console.error("Detailed error object from fetchUserData:", err); // Enhanced logging
       let specificError = "Failed to load your subscription information. Please try again.";
       let toastTitle = "Error Loading Subscription";
 
@@ -93,6 +91,7 @@ export default function SubscriptionPage() {
               toastTitle = "Client Configuration Error";
           }
       }
+      console.error("Failed to fetch user subscription data:", err);
       setError(specificError);
       toast({
           title: toastTitle,
@@ -118,7 +117,8 @@ export default function SubscriptionPage() {
     }
     setIsSubscribing(true);
     try {
-      const response = await fetch('/api/stripe/confirm-subscription', {
+      // Call the simulation API endpoint
+      const response = await fetch('/api/user/simulate-subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
@@ -126,18 +126,17 @@ export default function SubscriptionPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || "Failed to confirm subscription.");
+        throw new Error(result.message || "Failed to simulate subscription.");
       }
 
       toast({
-        title: "Subscription Activated!",
-        description: result.message || `Successfully added ${SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens and activated Pro plan.`,
+        title: "Subscription Activated (Simulated)!",
+        description: result.message || `Successfully added ${SIMULATED_SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens and activated Pro plan.`,
         className: "bg-green-100 border-green-300 text-green-800"
       });
       setTokenBalance(result.newTokenBalance);
       setIsProSubscribed(result.newSubscriptionStatus === 'active');
       setSubscriptionEndDate(result.newSubscriptionEndDate);
-      // await fetchUserData(); // Re-fetch to ensure consistency
 
     } catch (err: any) {
       toast({
@@ -153,8 +152,8 @@ export default function SubscriptionPage() {
 
   const handleManageSubscription = () => {
      toast({
-      title: "Stripe Integration Needed",
-      description: "This would typically redirect you to a Stripe customer portal to manage your subscription. Backend integration is required.",
+      title: "Manage Subscription (Conceptual)",
+      description: "This would typically redirect to a Stripe customer portal. Since payments are simulated, this button is conceptual.",
       duration: 5000,
     });
   };
@@ -189,7 +188,6 @@ export default function SubscriptionPage() {
       });
       setTokenBalance(result.newTokenBalance);
       setVoucherCode("");
-      // await fetchUserData(); // Re-fetch to ensure consistency
 
     } catch (err: any) {
       toast({
@@ -348,7 +346,7 @@ export default function SubscriptionPage() {
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-              Adds {SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens to your balance upon subscription.
+              Adds {SIMULATED_SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens to your balance upon subscription.
             </li>
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
@@ -389,7 +387,7 @@ export default function SubscriptionPage() {
               </Button>
             )}
             <p className="text-xs text-muted-foreground mt-2">
-              Actual payments would be securely processed by Stripe. You can cancel anytime.
+              This is a simulated payment. Clicking "Subscribe Now" will activate the Pro plan conceptually.
             </p>
           </div>
         </CardContent>
@@ -407,13 +405,7 @@ export default function SubscriptionPage() {
             <span className="font-semibold text-foreground">Tokens:</span> Your initial {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens allow for exploration. Vouchers and Pro plan activation add more tokens.
           </p>
            <p>
-            <span className="font-semibold text-foreground">Pro Plan:</span> While the Pro plan is active (subscription_status = 'active'), the token deduction API will skip actual deductions, effectively giving unlimited usage. Subscribing also grants a one-time bonus of {SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens.
-          </p>
-          <p>
-            <span className="font-semibold text-foreground">Backend Logic:</span> Real token tracking, enforcing limits, and managing subscription status requires backend implementation using Appwrite Functions to interact with AI APIs, update user token counts, and manage subscription status based on Stripe webhooks.
-          </p>
-          <p>
-            <span className="font-semibold text-foreground">Stripe Integration:</span> For actual subscriptions, a backend integration with Stripe is necessary to handle payments and subscription lifecycles, which then updates user data in Appwrite. This implementation simulates the post-payment confirmation step.
+            <span className="font-semibold text-foreground">Pro Plan:</span> While the Pro plan is active (subscription_status = 'active'), the token deduction API will skip actual deductions, effectively giving unlimited usage. Subscribing also grants a one-time bonus of {SIMULATED_SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens.
           </p>
         </CardContent>
       </Card>
