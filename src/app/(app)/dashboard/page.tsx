@@ -9,9 +9,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BookCopy, FileText, Loader2, ShieldAlert, ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
-import { account, databases, Query, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID, INTERVIEWS_COLLECTION_ID, AppwriteException } from "@/lib/appwrite";
+import { account, databases, Query, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID, INTERVIEWS_COLLECTION_ID, USERS_COLLECTION_ID, AppwriteException } from "@/lib/appwrite";
 import type { Lecture } from "@/types/lecture";
 import type { InterviewReport } from "@/types/interviewReport";
+// Assuming a type for user profile document, e.g., UserProfileDocument
+// If not defined elsewhere, you might need to define it or use `any` carefully.
+// import type { UserProfileDocument } from '@/types/userProfile'; 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
@@ -26,12 +29,15 @@ interface DashboardActivityItem {
 }
 
 export default function DashboardPage() {
+  const [userNameForGreeting, setUserNameForGreeting] = useState<string | null>(null);
   const [recentLectures, setRecentLectures] = useState<DashboardActivityItem[]>([]);
   const [isLoadingLectures, setIsLoadingLectures] = useState(true);
   const [recentInterviewReports, setRecentInterviewReports] = useState<DashboardActivityItem[]>([]);
   const [isLoadingInterviewReports, setIsLoadingInterviewReports] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tokenBalance, setTokenBalance] = useState<number | null>(null);
+  const [isLoadingUserProfile, setIsLoadingUserProfile] = useState(true); // For token balance loading
+
   const router = useRouter();
   const { toast } = useToast();
 
@@ -39,125 +45,138 @@ export default function DashboardPage() {
     const fetchDashboardData = async () => {
       setIsLoadingLectures(true);
       setIsLoadingInterviewReports(true);
-      setIsAdmin(false); 
+      setIsLoadingUserProfile(true);
+      setIsAdmin(false);
       
       try {
-        const user = await account.get();
-        if (!user?.$id) {
+        const currentUser = await account.get(); // Fetches Models.User<Models.Preferences>
+        if (!currentUser?.$id) {
           router.push("/login");
           return;
         }
+        setUserNameForGreeting(currentUser.name || "User");
 
-        setIsAdmin(user.labels && user.labels.includes('admin'));
-        console.log('User object:', user, 'Is Admin:', isAdmin);
-        setTokenBalance((user.prefs as any)?.token_balance ?? 0); // Assuming token_balance is in prefs
-        // This will only run for non-admin users now
-        const userId = user.$id;
+        const userIsAdmin = currentUser.labels && currentUser.labels.includes('admin');
+        setIsAdmin(userIsAdmin);
 
-        // Fetch Recent Lectures
-        if (APPWRITE_DATABASE_ID && LECTURES_COLLECTION_ID) {
-          try {
-            const lecturesResponse = await databases.listDocuments(
-              APPWRITE_DATABASE_ID,
-              LECTURES_COLLECTION_ID,
-              [
-                Query.equal("userId", userId),
-                Query.orderDesc("$createdAt"),
-                Query.limit(3)
-              ]
-            );
-            const lecturesData = lecturesResponse.documents.map(doc => {
-              const lecture = doc as Lecture;
-              return {
-                id: lecture.$id,
-                title: lecture.topic,
-                timestamp: formatDistanceToNow(new Date(lecture.$createdAt), { addSuffix: true }),
-                href: `/lectures/view/${lecture.$id}`
-              };
-            });
-            setRecentLectures(lecturesData);
-          } catch (lectureError) {
-            console.error("Failed to fetch recent lectures:", lectureError);
-            toast({ title: "Error Loading Lectures", description: "Could not load recent lectures.", variant: "destructive" });
-            setRecentLectures([]);
-          }
-        } else {
-          console.warn("Dashboard: Appwrite DB/Collection IDs not set for lectures.");
+        if (userIsAdmin) {
+          // Admin user: skip fetching user-specific data for this dashboard
+          setTokenBalance(null); // Admins might not have a token balance shown here
           setRecentLectures([]);
-        }
-        setIsLoadingLectures(false);
-
-        // Fetch Recent Interview Reports
-        if (APPWRITE_DATABASE_ID && INTERVIEWS_COLLECTION_ID) {
-          try {
-            const interviewsResponse = await databases.listDocuments(
-              APPWRITE_DATABASE_ID,
-              INTERVIEWS_COLLECTION_ID,
-              [
-                Query.equal("userId", userId),
-                Query.orderDesc("$createdAt"),
-                Query.limit(3)
-              ]
-            );
-            const interviewsData = interviewsResponse.documents.map(doc => {
-              const report = doc as InterviewReport;
-              return {
-                id: report.$id,
-                title: `Interview: ${report.jobDescription.substring(0, 50)}${report.jobDescription.length > 50 ? '...' : ''}`,
-                timestamp: formatDistanceToNow(new Date(report.$createdAt), { addSuffix: true }),
-                href: `/interviews/report/${report.$id}` 
-              };
-            });
-            setRecentInterviewReports(interviewsData);
-          } catch (interviewError) {
-            console.error("Failed to fetch recent interview reports:", interviewError);
-            toast({ title: "Error Loading Interview Feedback", description: "Could not load recent interview feedback.", variant: "destructive" });
-            setRecentInterviewReports([]);
-          }
-        } else {
-          console.warn("Dashboard: Appwrite DB/Collection IDs not set for interviews.");
           setRecentInterviewReports([]);
-        }
-        setIsLoadingInterviewReports(false);
+          setIsLoadingUserProfile(false);
+          setIsLoadingLectures(false);
+          setIsLoadingInterviewReports(false);
+          // Admins are typically redirected to /admindashboard by their own page logic
+          // or by AppHeader links.
+        } else {
+          // Non-admin user: fetch their profile document for token balance, and activities
+          const userId = currentUser.$id;
 
+          // Fetch User Profile Document from USERS_COLLECTION_ID for token_balance
+          if (APPWRITE_DATABASE_ID && USERS_COLLECTION_ID) {
+            try {
+              const userProfileDoc = await databases.getDocument(APPWRITE_DATABASE_ID, USERS_COLLECTION_ID, userId);
+              // Assuming 'token_balance' is a direct attribute of the userProfileDoc
+              setTokenBalance((userProfileDoc as any).token_balance ?? 0); 
+            } catch (profileError) {
+              console.error("Failed to fetch user profile for token balance:", profileError);
+              if (profileError instanceof AppwriteException && profileError.code === 404) {
+                toast({ title: "Profile Incomplete", description: "Your user profile data is not found. Please contact support or try re-registering if this is a new account.", variant: "destructive", duration: 7000 });
+              } else {
+                toast({ title: "Error Loading Profile", description: "Could not load your token balance.", variant: "destructive" });
+              }
+              setTokenBalance(0); // Fallback
+            }
+          } else {
+            console.warn("Dashboard: Appwrite DB/Collection IDs not set for user profile.");
+            toast({ title: "Configuration Error", description: "User profile collection not configured.", variant: "destructive" });
+            setTokenBalance(0); // Fallback
+          }
+          setIsLoadingUserProfile(false);
+
+          // Fetch Recent Lectures
+          if (APPWRITE_DATABASE_ID && LECTURES_COLLECTION_ID) {
+            try {
+              const lecturesResponse = await databases.listDocuments(
+                APPWRITE_DATABASE_ID,
+                LECTURES_COLLECTION_ID,
+                [Query.equal("userId", userId), Query.orderDesc("$createdAt"), Query.limit(3)]
+              );
+              const lecturesData = lecturesResponse.documents.map(doc => {
+                const lecture = doc as Lecture;
+                return {
+                  id: lecture.$id, title: lecture.topic,
+                  timestamp: formatDistanceToNow(new Date(lecture.$createdAt), { addSuffix: true }),
+                  href: `/lectures/view/${lecture.$id}`
+                };
+              });
+              setRecentLectures(lecturesData);
+            } catch (lectureError) {
+              console.error("Failed to fetch recent lectures:", lectureError);
+              // Toast handled by component or specific error if needed
+            }
+          }
+          setIsLoadingLectures(false);
+
+          // Fetch Recent Interview Reports
+          if (APPWRITE_DATABASE_ID && INTERVIEWS_COLLECTION_ID) {
+            try {
+              const interviewsResponse = await databases.listDocuments(
+                APPWRITE_DATABASE_ID, INTERVIEWS_COLLECTION_ID,
+                [Query.equal("userId", userId), Query.orderDesc("$createdAt"), Query.limit(3)]
+              );
+              const interviewsData = interviewsResponse.documents.map(doc => {
+                const report = doc as InterviewReport;
+                return {
+                  id: report.$id, title: `Interview: ${report.jobDescription.substring(0, 50)}${report.jobDescription.length > 50 ? '...' : ''}`,
+                  timestamp: formatDistanceToNow(new Date(report.$createdAt), { addSuffix: true }),
+                  href: `/interviews/report/${report.$id}`
+                };
+              });
+              setRecentInterviewReports(interviewsData);
+            } catch (interviewError) {
+              console.error("Failed to fetch recent interview reports:", interviewError);
+            }
+          }
+          setIsLoadingInterviewReports(false);
+        }
       } catch (error) {
         console.error("Dashboard auth/data fetch error:", error);
         if (error instanceof AppwriteException && 
-            (error.code === 401 ||
-             error.type === 'user_unauthorized' || 
-             error.type === 'general_unauthorized_scope')) {
+            (error.code === 401 || error.type === 'user_unauthorized' || error.type === 'general_unauthorized_scope')) {
           toast({ title: "Session Expired", description: "Please log in again.", variant: "default" });
           router.push('/login');
         } else {
-          // This part might not be reached if an admin is redirected earlier,
-          // but kept for general error handling for non-admins.
           toast({ title: "Error Loading Dashboard", description: "Could not load dashboard data. Please try again later.", variant: "destructive" });
-          setRecentLectures([]);
-          setRecentInterviewReports([]);
         }
+        setRecentLectures([]);
+        setRecentInterviewReports([]);
+        setIsLoadingUserProfile(false);
         setIsLoadingLectures(false);
         setIsLoadingInterviewReports(false);
-        setIsAdmin(false); // Ensure isAdmin is false on error
+        setIsAdmin(false);
+        setTokenBalance(null);
+        setUserNameForGreeting(null);
       }
     };
 
     fetchDashboardData();
   }, [router, toast]);
 
-  // The UI for admin panel section on this page is effectively removed because admins will be redirected.
-  // If an admin is NOT redirected (e.g., error before redirect), they won't see the admin panel here.
-  // The `isAdmin` state for UI purposes is largely superseded by the redirect.
-  // We could remove the `isAdmin` state and related UI section entirely from this page
-  // if we're confident the redirect will always occur for admins.
-  // For now, leaving the UI structure as is, though it won't be shown to admins if redirect works.
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-      <Greeting />
-      {tokenBalance !== null && (
-        <div className="text-lg font-semibold text-primary">Tokens: {tokenBalance}</div>
-      )}
+        <Greeting name={userNameForGreeting} isLoading={isLoadingUserProfile && !isAdmin} />
+        {!isAdmin && tokenBalance !== null && !isLoadingUserProfile && (
+          <div className="text-lg font-semibold text-primary">Tokens: {tokenBalance.toLocaleString()}</div>
+        )}
+        {!isAdmin && isLoadingUserProfile && (
+           <div className="text-lg font-semibold text-primary flex items-center">
+             <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading Tokens...
+           </div>
+        )}
       </div>
       <p className="text-muted-foreground">
         Explore AI-powered tools to enhance your learning and preparation.
@@ -170,17 +189,16 @@ export default function DashboardPage() {
         <NavigationButtons />
       </div>
 
-      {/* This section will not be visible to admins if the redirect above works correctly. */}
+      {/* This section will not be visible to admins if they are redirected or if isAdmin is true */}
       {isAdmin && (
         <>
           <Separator />
           <div>
             <h2 className="font-headline text-2xl font-semibold mb-4 flex items-center">
-              <ShieldAlert className="mr-2 h-6 w-6 text-primary" /> Admin Panel (Access from Header/Sidebar)
+              <ShieldAlert className="mr-2 h-6 w-6 text-primary" /> Admin Panel Access
             </h2>
              <p className="text-sm text-muted-foreground mb-4">
-                As an admin, you can access the admin panel directly using the links in the header or sidebar.
-                You have been redirected from the main user dashboard to the admin dashboard.
+                As an admin, you can access the admin dashboard and user management tools via the links in the header or sidebar.
             </p>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {ADMIN_NAV_ITEMS.map((item) => (
@@ -212,31 +230,34 @@ export default function DashboardPage() {
         </>
       )}
 
-      <Separator />
+      {!isAdmin && (
+        <>
+        <Separator />
+        <div className="grid gap-6 md:grid-cols-2">
+          <RecentActivityCard
+            title="Recent Lectures"
+            icon={BookCopy}
+            items={recentLectures}
+            isLoading={isLoadingLectures}
+            emptyMessage="No lectures generated yet."
+            viewAllLink="/lectures/history"
+            emptyActionLink="/lectures"
+            emptyActionText="Create a Lecture"
+          />
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <RecentActivityCard
-          title="Recent Lectures"
-          icon={BookCopy}
-          items={recentLectures}
-          isLoading={isLoadingLectures}
-          emptyMessage="No lectures generated yet."
-          viewAllLink="/lectures/history"
-          emptyActionLink="/lectures"
-          emptyActionText="Create a Lecture"
-        />
-
-        <RecentActivityCard
-          title="Interview Feedback"
-          icon={FileText}
-          items={recentInterviewReports}
-          isLoading={isLoadingInterviewReports}
-          emptyMessage="No interview feedback available yet."
-          viewAllLink="/interviews/history" 
-          emptyActionLink="/interviews"
-          emptyActionText="Start an Interview"
-        />
-      </div>
+          <RecentActivityCard
+            title="Interview Feedback"
+            icon={FileText}
+            items={recentInterviewReports}
+            isLoading={isLoadingInterviewReports}
+            emptyMessage="No interview feedback available yet."
+            viewAllLink="/interviews/history" 
+            emptyActionLink="/interviews"
+            emptyActionText="Start an Interview"
+          />
+        </div>
+        </>
+      )}
     </div>
   );
 }

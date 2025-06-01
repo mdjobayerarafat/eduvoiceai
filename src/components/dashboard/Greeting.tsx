@@ -1,18 +1,20 @@
+
 "use client";
 
-// Placeholder for user data
-const useUser = () => ({ user: { name: "Learner" }, isLoading: false });
+interface GreetingProps {
+  name?: string | null;
+  isLoading?: boolean;
+}
 
-export function Greeting() {
-  const { user, isLoading } = useUser();
-
+export function Greeting({ name, isLoading }: GreetingProps) {
   if (isLoading) {
+    // You can refine this loading state if needed, e.g., show a Skeleton
     return <h1 className="font-headline text-3xl font-semibold">Loading...</h1>;
   }
 
   return (
     <h1 className="font-headline text-3xl font-semibold">
-      Welcome back, {user?.name}!
+      Welcome back, {name || "Learner"}!
     </h1>
   );
 }
