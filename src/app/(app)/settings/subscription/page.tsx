@@ -8,9 +8,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle, CreditCard, ExternalLink, Info, Zap, Coins, Loader2, AlertTriangle } from "lucide-react";
+import { CheckCircle, CreditCard, ExternalLink, Info, Zap, Coins, Loader2, AlertTriangle, Ticket } from "lucide-react";
 import { account, databases, APPWRITE_DATABASE_ID, USERS_COLLECTION_ID, AppwriteException } from "@/lib/appwrite";
 import type { Models } from "appwrite";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 // Define a more specific type for the document fetched from USERS_COLLECTION_ID
 interface UserProfileDocument extends Models.Document {
@@ -19,11 +21,10 @@ interface UserProfileDocument extends Models.Document {
   token_balance?: number;
   subscription_status?: "trial" | "active" | "cancelled" | "past_due";
   subscription_end_date?: string; // ISO date string
-  // Add other fields from your USERS_COLLECTION_ID if needed
 }
 
-
-const FREE_TOKEN_ALLOWANCE = 60000; // This is a conceptual value, actual initial tokens are set at registration
+const FREE_TOKEN_ALLOWANCE = 60000; 
+const VOUCHER_TOKEN_GRANT = 60000;
 
 export default function SubscriptionPage() {
   const { toast } = useToast();
@@ -36,23 +37,25 @@ export default function SubscriptionPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [voucherCode, setVoucherCode] = useState("");
+  const [isRedeemingVoucher, setIsRedeemingVoucher] = useState(false);
+
 
   const fetchUserData = async () => {
     setIsLoading(true);
     setError(null); 
     try {
-      const currentUser = await account.get(); // This gets the Appwrite Auth user
+      const currentUser = await account.get(); 
       if (!currentUser?.$id) {
         throw new AppwriteException("User not authenticated.", 401, "user_unauthorized");
       }
       setUserId(currentUser.$id);
 
-      // Now fetch the custom user profile document from USERS_COLLECTION_ID
       if (APPWRITE_DATABASE_ID && USERS_COLLECTION_ID) {
         const userProfileDoc = await databases.getDocument(
           APPWRITE_DATABASE_ID,
           USERS_COLLECTION_ID,
-          currentUser.$id // Use Appwrite Auth user ID as the document ID
+          currentUser.$id 
         ) as UserProfileDocument;
 
         setTokenBalance(userProfileDoc.token_balance ?? 0);
@@ -70,7 +73,7 @@ export default function SubscriptionPage() {
           if (err.code === 401 || err.type === 'user_unauthorized') {
             toast({ title: "Session Expired", description: "Please log in again.", variant: "default" });
             router.push('/login');
-            return; // Stop further execution if redirecting
+            return; 
           } else if (err.code === 404) {
             specificError = "Your user profile data could not be found. This might happen if your account setup is incomplete. Please contact support.";
           } else {
@@ -82,7 +85,7 @@ export default function SubscriptionPage() {
       setError(specificError);
       toast({
           title: "Error Loading Subscription",
-          description: specificError.substring(0, 150), // Keep toast brief
+          description: specificError.substring(0, 150), 
           variant: "destructive"
       });
     } finally {
@@ -93,7 +96,7 @@ export default function SubscriptionPage() {
   useEffect(() => {
     fetchUserData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // router and toast are stable, fetchUserData is memoized by being inside useEffect
+  }, []); 
 
 
   const handleSubscribe = () => {
@@ -112,13 +115,52 @@ export default function SubscriptionPage() {
     });
   };
 
-  // Calculate tokens remaining based on the fetched tokenBalance
-  // The FREE_TOKEN_ALLOWANCE is conceptual here; the actual balance is `tokenBalance`.
-  // We can show progress towards using the initial allowance IF the user is still on 'trial'
-  // or has a balance that might relate to a free tier.
+  const handleRedeemVoucher = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!voucherCode.trim()) {
+      toast({ title: "Voucher Code Required", description: "Please enter a voucher code.", variant: "destructive" });
+      return;
+    }
+    if (!userId) {
+      toast({ title: "Error", description: "User not identified. Please refresh.", variant: "destructive" });
+      return;
+    }
+    setIsRedeemingVoucher(true);
+    try {
+      const response = await fetch('/api/user/redeem-voucher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, voucherCode: voucherCode.trim().toUpperCase() }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to redeem voucher.");
+      }
+
+      toast({
+        title: "Voucher Redeemed!",
+        description: result.message || `Successfully added ${VOUCHER_TOKEN_GRANT.toLocaleString()} tokens.`,
+        className: "bg-green-100 border-green-300 text-green-800"
+      });
+      setTokenBalance(result.newTokenBalance); // Update token balance from API response
+      setVoucherCode(""); // Clear input
+      await fetchUserData(); // Re-fetch user data to get latest balance and potentially other statuses
+
+    } catch (err: any) {
+      toast({
+        title: "Voucher Redemption Failed",
+        description: err.message || "An unknown error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRedeemingVoucher(false);
+    }
+  };
+
   const displayTokensUsed = tokenBalance !== null ? (FREE_TOKEN_ALLOWANCE - tokenBalance > 0 ? FREE_TOKEN_ALLOWANCE - tokenBalance : 0) : 0;
   const displayTokensRemaining = tokenBalance !== null ? tokenBalance : 0;
-  const displayProgress = FREE_TOKEN_ALLOWANCE > 0 ? (displayTokensUsed / FREE_TOKEN_ALLOWANCE) * 100 : 0;
+  const displayProgress = FREE_TOKEN_ALLOWANCE > 0 && tokenBalance !== null && !isProSubscribed ? Math.min(100, ((FREE_TOKEN_ALLOWANCE - tokenBalance) / FREE_TOKEN_ALLOWANCE) * 100) : (isProSubscribed ? 100 : 0);
 
 
   if (isLoading) {
@@ -130,7 +172,7 @@ export default function SubscriptionPage() {
     );
   }
 
-   if (error && !isLoading) { // Ensure error is shown only after loading finishes
+   if (error && !isLoading) { 
     return (
       <div className="space-y-8 text-center">
         <Card className="max-w-md mx-auto border-destructive">
@@ -156,7 +198,7 @@ export default function SubscriptionPage() {
           <CreditCard className="mr-3 h-8 w-8 text-primary" /> Subscription & Usage
         </h1>
         <p className="text-muted-foreground mt-1">
-          Manage your EduVoice AI plan and track your token usage.
+          Manage your EduVoice AI plan, track your token usage, and redeem vouchers.
         </p>
       </div>
 
@@ -166,29 +208,37 @@ export default function SubscriptionPage() {
             <Coins className="mr-2 h-6 w-6 text-yellow-500" /> Your Token Usage
           </CardTitle>
           <CardDescription>
-             Your current token balance for using AI features. Initial free allowance is {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens.
+             Your current token balance for using AI features. Initial free allowance is {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens. Vouchers grant {VOUCHER_TOKEN_GRANT.toLocaleString()} tokens.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
             <div className="flex justify-between text-sm mb-1">
-              <span>Tokens Used (from initial allowance): {displayTokensUsed.toLocaleString()}</span>
-              <span>Tokens Balance: <span className="font-bold">{displayTokensRemaining.toLocaleString()}</span></span>
+              <span>
+                Tokens Balance: <span className="font-bold text-lg">{displayTokensRemaining.toLocaleString()}</span>
+              </span>
+              {!isProSubscribed && tokenBalance !== null && tokenBalance < FREE_TOKEN_ALLOWANCE && (
+                <span>Initial Free Tokens Used: {displayTokensUsed.toLocaleString()} / {FREE_TOKEN_ALLOWANCE.toLocaleString()}</span>
+              )}
             </div>
-            <div className="w-full bg-muted rounded-full h-3.5">
-              <div
-                className={`h-3.5 rounded-full transition-all duration-500 ease-out ${ displayTokensRemaining > 0 ? 'bg-primary' : 'bg-destructive'}`}
-                style={{ width: `${Math.min(100, displayProgress)}%` }} // Cap progress at 100%
-              ></div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1 text-center">
-              {Math.min(100, displayProgress).toFixed(1)}% of initial free tokens used.
-            </p>
+            {!isProSubscribed && (
+                <div className="w-full bg-muted rounded-full h-3.5">
+                <div
+                    className={`h-3.5 rounded-full transition-all duration-500 ease-out ${ displayTokensRemaining > 0 ? 'bg-primary' : 'bg-destructive'}`}
+                    style={{ width: `${displayTokensRemaining > 0 ? Math.min(100, (displayTokensRemaining / FREE_TOKEN_ALLOWANCE) * 100) : 0}%` }}
+                ></div>
+                </div>
+            )}
+            {!isProSubscribed && (
+                <p className="text-xs text-muted-foreground mt-1 text-center">
+                {displayTokensRemaining > 0 ? `${Math.min(100, (displayTokensRemaining / FREE_TOKEN_ALLOWANCE) * 100).toFixed(1)}% of initial free tokens remaining.` : "No free tokens remaining."}
+                </p>
+            )}
           </div>
           {displayTokensRemaining <= 0 && !isProSubscribed && (
             <Alert variant="destructive" className="bg-destructive/10 border-destructive/30 text-destructive-foreground">
               <Info className="inline h-4 w-4 mr-2" />
-              You have used all your free tokens or have a zero balance. Please subscribe to continue using AI features or purchase more tokens (feature coming soon).
+              You have used all your free tokens or have a zero balance. Redeem a voucher or subscribe to continue using AI features.
             </Alert>
           )}
            {isProSubscribed && (
@@ -207,6 +257,40 @@ export default function SubscriptionPage() {
       <Card>
         <CardHeader>
           <CardTitle className="font-headline text-2xl flex items-center">
+            <Ticket className="mr-2 h-6 w-6 text-green-600" /> Redeem Voucher
+          </CardTitle>
+          <CardDescription>
+            Have a voucher code? Enter it here to add {VOUCHER_TOKEN_GRANT.toLocaleString()} tokens to your balance.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleRedeemVoucher} className="space-y-4">
+            <div>
+              <Label htmlFor="voucherCode">Voucher Code</Label>
+              <div className="flex gap-2 mt-1">
+                <Input
+                  id="voucherCode"
+                  name="voucherCode"
+                  placeholder="Enter your voucher code"
+                  value={voucherCode}
+                  onChange={(e) => setVoucherCode(e.target.value)}
+                  disabled={isRedeemingVoucher || isLoading}
+                  className="flex-grow"
+                />
+                <Button type="submit" disabled={isRedeemingVoucher || isLoading || !voucherCode.trim()}>
+                  {isRedeemingVoucher ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Redeem
+                </Button>
+              </div>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-headline text-2xl flex items-center">
             <Zap className="mr-2 h-6 w-6 text-accent" /> EduVoice AI Pro Plan
           </CardTitle>
           <CardDescription>
@@ -221,7 +305,7 @@ export default function SubscriptionPage() {
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
-              Unlimited usage of AI-powered features
+              Unlimited token usage for all AI features
             </li>
             <li className="flex items-center">
               <CheckCircle className="h-5 w-5 text-green-500 mr-2 shrink-0" />
@@ -267,13 +351,13 @@ export default function SubscriptionPage() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            <span className="font-semibold text-foreground">Tokens:</span> Units of data processed by AI models. Different actions (e.g., generating lectures, interview questions, feedback) consume tokens. Your initial {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens allow for substantial exploration. Your current balance is fetched from your user profile.
+            <span className="font-semibold text-foreground">Tokens:</span> Units of data processed by AI models. Your initial {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens allow for exploration. Vouchers can add more tokens. Pro plan gives unlimited tokens.
           </p>
           <p>
-            <span className="font-semibold text-foreground">Backend Logic:</span> Real token tracking (decrementing after AI calls), enforcing limits, and managing subscription status requires robust backend implementation using Appwrite (e.g., Appwrite Functions to interact with AI APIs and update user token counts in the 'users' collection, and to manage subscription status based on Stripe webhooks).
+            <span className="font-semibold text-foreground">Backend Logic:</span> Real token tracking, enforcing limits, and managing subscription status requires backend implementation using Appwrite Functions to interact with AI APIs, update user token counts, and manage subscription status based on Stripe webhooks.
           </p>
           <p>
-            <span className="font-semibold text-foreground">Stripe Integration:</span> For actual subscriptions, a backend integration with Stripe is necessary to handle payments, webhooks (to update Appwrite user data in the 'users' collection on successful payment or cancellation), and manage subscription lifecycles.
+            <span className="font-semibold text-foreground">Stripe Integration:</span> For actual subscriptions, a backend integration with Stripe is necessary to handle payments and subscription lifecycles, which then updates user data in Appwrite.
           </p>
         </CardContent>
       </Card>
@@ -281,3 +365,4 @@ export default function SubscriptionPage() {
   );
 }
 
+    
