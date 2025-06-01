@@ -90,21 +90,21 @@ export default function QAPrepPage() {
     setCurrentPdfName(null);
     setCurrentNumQuestions(null);
 
-    let currentUser: Models.User<Models.Preferences> | null = null;
+    let userId: string; // Declare userId here
+
     try {
-      currentUser = await account.get();
+      const currentUser = await account.get();
+      if (!currentUser?.$id) {
+        toast({ title: "Authentication Error", description: "User ID not found. Please log in again.", variant: "destructive" });
+        setIsLoading(false);
+        return;
+      }
+      userId = currentUser.$id; // Assign userId
     } catch (authError) {
       toast({ title: "Authentication Error", description: "Could not verify user. Please log in again.", variant: "destructive" });
       setIsLoading(false);
       return;
     }
-
-    if (!currentUser?.$id) {
-      toast({ title: "Authentication Error", description: "User ID not found.", variant: "destructive" });
-      setIsLoading(false);
-      return;
-    }
-    const userId = currentUser.$id;
 
     const pdfFile = values.pdfFile[0];
     setCurrentPdfName(pdfFile.name);
@@ -117,7 +117,7 @@ export default function QAPrepPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId,
+          userId, // Use userId
           amountToDeduct: tokenCost,
           description: `Q&A Prep Quiz Generation: ${pdfFile.name} (${values.numQuestions} questions)`
         }),
@@ -352,5 +352,3 @@ export default function QAPrepPage() {
     </div>
   );
 }
-
-    
