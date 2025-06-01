@@ -8,23 +8,36 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Users, MoreHorizontal, Search, Filter, Download, ShieldCheck, Ban, TrendingUp, Loader2, AlertTriangle, ShieldAlert } from "lucide-react";
+import { Users, MoreHorizontal, Search, Filter, Download, ShieldCheck, Ban, TrendingUp, Loader2, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { account, AppwriteException } from "@/lib/appwrite";
-import type { AppwriteUser } from "@/types/appwriteUser";
+import { account, AppwriteException } from "@/lib/appwrite"; // For admin check
 import { formatDistanceToNow } from 'date-fns';
+import type { Models } from 'appwrite'; // For Models.Document
 
-// Function to determine user status conceptually based on Appwrite data
-const getConceptualUserStatus = (user: AppwriteUser): string => {
-  if (!user.status) return "Unknown"; // Appwrite's user.status is boolean (enabled/disabled)
-  if (!user.emailVerification) return "Pending Verification";
-  return user.status ? "Active" : "Disabled";
+// Type for user documents fetched from your custom USERS_COLLECTION_ID
+interface CustomUserDocument extends Models.Document {
+  username: string; // Expect username from custom collection
+  email: string;
+  role?: "admin" | "user"; // Assuming 'role' attribute exists
+  subscription_status?: "trial" | "active" | "cancelled" | "past_due";
+  // Add other fields from your USERS_COLLECTION_ID as needed
+  // $createdAt is a standard Appwrite document attribute
+}
+
+
+// Function to determine user status based on custom user document fields
+const getConceptualUserStatus = (user: CustomUserDocument): string => {
+  if (user.subscription_status === "active") return "Active";
+  if (user.subscription_status === "trial") return "Trial";
+  if (user.subscription_status === "cancelled") return "Cancelled";
+  if (user.subscription_status === "past_due") return "Past Due";
+  return "Unknown"; // Default status
 };
 
 export default function ManageUsersPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
-  const [userList, setUserList] = useState<AppwriteUser[]>([]);
+  const [userList, setUserList] = useState<CustomUserDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,21 +46,29 @@ export default function ManageUsersPage() {
       setIsLoading(true);
       setError(null);
       try {
-        const currentUser = await account.get();
+        // 1. Check if the current user is an admin (using Appwrite Auth labels)
+        const currentUser = await account.get(); // Fetches Appwrite Auth user
         if (!currentUser.labels || !currentUser.labels.includes("admin")) {
           router.push("/dashboard"); // Redirect non-admins
           return;
         }
 
+        // 2. Fetch users from your custom database collection via the API route
         const response = await fetch('/api/admin/users');
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `Failed to fetch users: ${response.statusText}`);
+        }
         const data = await response.json();
-        setUserList(data.users as AppwriteUser[]);
+        setUserList(data as CustomUserDocument[]);
 
       } catch (err: any) {
         console.error("Error fetching users or admin check:", err);
-         let specificError = "Failed to load user data. You may not have permissions or there was a server issue.";
+        let specificError = "Failed to load user data. You may not have permissions or there was a server issue.";
         if (err instanceof AppwriteException) {
-            specificError = `Appwrite Error: ${err.message}. Ensure your Appwrite user or API key has 'users.read' permissions.`;
+            specificError = `Appwrite Error (Admin Check): ${err.message}.`;
+        } else if (err.message) {
+            specificError = err.message;
         }
         setError(specificError);
       } finally {
@@ -58,13 +79,14 @@ export default function ManageUsersPage() {
   }, [router]);
 
   const filteredUsers = userList.filter(user =>
-    (user.name && user.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (user.username && user.username.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
   
-  // Conceptual actions - these would require Appwrite Functions or direct SDK calls with proper permissions
-  const handleMakeAdmin = (userId: string) => alert(`Conceptual: Make user ${userId} admin. Requires Appwrite backend logic to update user labels.`);
-  const handleBanUser = (userId: string) => alert(`Conceptual: Ban user ${userId}. Requires Appwrite backend logic to update user status or labels.`);
+  // Conceptual actions - these would require backend logic to update the user's document in USERS_COLLECTION_ID (for role)
+  // or update labels on the Appwrite Auth user object.
+  const handleMakeAdmin = (userId: string) => alert(`Conceptual: Make user ${userId} admin. Requires backend logic to update 'role' attribute in the custom user collection or Auth user labels.`);
+  const handleBanUser = (userId: string) => alert(`Conceptual: Ban user ${userId}. Requires backend logic to update 'subscription_status' or a dedicated 'status' field in the custom user collection.`);
 
 
   if (isLoading) {
@@ -103,7 +125,7 @@ export default function ManageUsersPage() {
           <Users className="mr-3 h-8 w-8 text-primary" /> Manage Users
         </h1>
         <p className="text-muted-foreground mt-1">
-          View, search, and manage user accounts on the EduVoice AI platform.
+          View, search, and manage user accounts from the custom database collection.
         </p>
       </div>
 
@@ -111,14 +133,14 @@ export default function ManageUsersPage() {
         <CardHeader>
           <CardTitle className="font-headline text-xl">User List ({filteredUsers.length} / {userList.length})</CardTitle>
           <CardDescription>
-            Browse and manage all registered users. Some actions are conceptual and require backend implementation.
+            Browse and manage all registered users. Admin check uses Appwrite Auth labels.
           </CardDescription>
           <div className="flex flex-col sm:flex-row items-center gap-2 pt-4">
             <div className="relative flex-grow w-full sm:w-auto">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search users by name or email..."
+                placeholder="Search by username or email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-8 w-full"
@@ -136,7 +158,7 @@ export default function ManageUsersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
+                <TableHead>Username</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
@@ -147,10 +169,10 @@ export default function ManageUsersPage() {
             <TableBody>
               {filteredUsers.map((user) => (
                 <TableRow key={user.$id}>
-                  <TableCell className="font-medium">{user.name || "N/A"}</TableCell>
+                  <TableCell className="font-medium">{user.username || "N/A"}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
-                    {user.labels?.includes("admin") ? (
+                    {user.role === "admin" ? (
                       <Badge variant="default" className="bg-primary/80 text-primary-foreground">Admin</Badge>
                     ) : (
                       <Badge variant="secondary">User</Badge>
@@ -160,13 +182,12 @@ export default function ManageUsersPage() {
                     <Badge
                       variant={
                         getConceptualUserStatus(user) === "Active" ? "default" :
-                        getConceptualUserStatus(user) === "Needs Subscription" ? "outline" : // conceptual
-                        getConceptualUserStatus(user) === "Banned" ? "destructive" : // conceptual
-                        getConceptualUserStatus(user) === "Disabled" ? "destructive" :
+                        getConceptualUserStatus(user) === "Trial" ? "outline" :
+                        (getConceptualUserStatus(user) === "Cancelled" || getConceptualUserStatus(user) === "Past Due") ? "destructive" :
                         "secondary"
                       }
                       className={getConceptualUserStatus(user) === "Active" ? "bg-green-500/20 text-green-700 border-green-500/30" : 
-                                 getConceptualUserStatus(user) === "Needs Subscription" ? "bg-yellow-500/20 text-yellow-700 border-yellow-500/30" : ""}
+                                 getConceptualUserStatus(user) === "Trial" ? "bg-yellow-500/20 text-yellow-700 border-yellow-500/30" : ""}
                     >
                       {getConceptualUserStatus(user)}
                     </Badge>
@@ -182,10 +203,10 @@ export default function ManageUsersPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem onClick={() => alert(`View activity for ${user.name}. Requires activity logging collection.`)}>
+                        <DropdownMenuItem onClick={() => alert(`View activity for ${user.username}. Requires activity logging collection.`)}>
                           <TrendingUp className="mr-2 h-4 w-4" /> View Activity
                         </DropdownMenuItem>
-                        {!user.labels?.includes("admin") && (
+                        {user.role !== "admin" && (
                         <DropdownMenuItem onClick={() => handleMakeAdmin(user.$id)}>
                           <ShieldCheck className="mr-2 h-4 w-4" /> Make Admin
                         </DropdownMenuItem>
@@ -208,8 +229,7 @@ export default function ManageUsersPage() {
             </TableBody>
           </Table>
            <p className="mt-4 text-xs text-destructive">
-            Note: User data is fetched from Appwrite. Actions like 'Make Admin' or 'Ban User' are conceptual and require robust backend implementation (e.g., Appwrite Functions to manage user labels/status and audit logs).
-            Fetching all users requires appropriate permissions on your Appwrite project for the client or use of a backend function.
+            Note: User data is fetched from your custom Appwrite collection. Actions like 'Make Admin' or 'Ban User' are conceptual and require backend implementation to update the custom collection or related Auth user.
           </p>
         </CardContent>
       </Card>
