@@ -14,8 +14,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, AlertTriangle, ArrowLeft, ArrowRight, Send, Timer, CheckCircle, XCircle, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { quizEvaluationFlow } from "@/ai/flows/quiz-evaluation-flow"; // Stubbed flow
+import { evaluateQuiz } from "@/ai/flows/quiz-evaluation-flow"; 
 import type { QuizEvaluationInput, QuizEvaluationOutput } from "@/ai/flows/quiz-evaluation-flow";
+import { format } from 'date-fns';
 
 
 export default function ExamPage() {
@@ -56,7 +57,6 @@ export default function ExamPage() {
 
       if (fetchedReport.status === "completed" && fetchedReport.overallFeedback) {
         setExamCompleted(true);
-        // If already completed, parse and set evaluation results directly
         const parsedDetailedFeedback = fetchedReport.userAnswersAndFeedback ? JSON.parse(fetchedReport.userAnswersAndFeedback) : [];
         setEvaluationResult({
             overallScore: fetchedReport.overallScore || 0,
@@ -82,7 +82,23 @@ export default function ExamPage() {
 
       const parsedQuestions = JSON.parse(fetchedReport.generatedQuestions || "[]") as string[];
       setQuestions(parsedQuestions);
-      setRemainingTime(fetchedReport.durationMinutes * 60);
+      
+      // Calculate remaining time based on startedAt or set to full duration
+      if (fetchedReport.startedAt) {
+        const startTime = new Date(fetchedReport.startedAt).getTime();
+        const now = new Date().getTime();
+        const elapsedSeconds = Math.floor((now - startTime) / 1000);
+        const initialDurationSeconds = fetchedReport.durationMinutes * 60;
+        const newRemainingTime = Math.max(0, initialDurationSeconds - elapsedSeconds);
+        setRemainingTime(newRemainingTime);
+        if (newRemainingTime <=0 && fetchedReport.status === "in_progress") {
+            handleFinishExam("timer_expired_on_load");
+            return;
+        }
+      } else {
+        setRemainingTime(fetchedReport.durationMinutes * 60);
+      }
+
 
       if (!fetchedReport.startedAt && fetchedReport.status === "generated") {
         await databases.updateDocument(APPWRITE_DATABASE_ID, QA_REPORTS_COLLECTION_ID, reportId, {
@@ -113,7 +129,7 @@ export default function ExamPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [reportId, router, toast]);
+  }, [reportId, router, toast]); // Removed handleFinishExam
 
   useEffect(() => {
     loadExamData();
@@ -122,7 +138,7 @@ export default function ExamPage() {
 
   const startTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (remainingTime === null || remainingTime <= 0 || examCompleted) return;
+    if (remainingTime === null || remainingTime <= 0 || examCompleted || report?.status !== "in_progress") return;
 
     timerRef.current = setInterval(() => {
       setRemainingTime(prevTime => {
@@ -135,7 +151,7 @@ export default function ExamPage() {
         return prevTime - 1;
       });
     }, 1000);
-  }, [remainingTime, examCompleted]); // Removed handleFinishExam from dependencies
+  }, [remainingTime, examCompleted, report?.status]); // Removed handleFinishExam
 
   useEffect(() => {
     if (remainingTime !== null && remainingTime > 0 && !isLoading && !examCompleted && report?.status === "in_progress") {
@@ -163,7 +179,7 @@ export default function ExamPage() {
     }
   };
 
-  const handleFinishExam = useCallback(async (reason: "manual" | "timer_expired") => {
+  const handleFinishExam = useCallback(async (reason: "manual" | "timer_expired" | "timer_expired_on_load") => {
     if (isSubmitting || examCompleted || !report) return;
     setIsSubmitting(true);
     if (timerRef.current) clearInterval(timerRef.current);
@@ -173,27 +189,24 @@ export default function ExamPage() {
     const answersArray = questions.map((_, index) => userAnswers[index] || "");
 
     try {
-      // 1. Update status to in_progress_evaluation (optional, could be done in API)
       await databases.updateDocument(APPWRITE_DATABASE_ID, QA_REPORTS_COLLECTION_ID, reportId, {
-        status: "in_progress_evaluation"
+        status: "in_progress_evaluation" // Indicate evaluation has started
       });
 
-      // 2. Call Genkit flow for evaluation (currently stubbed)
       const evaluationInput: QuizEvaluationInput = {
         questions: questions,
         userAnswers: answersArray,
       };
-      const evaluationData = await quizEvaluationFlow(evaluationInput);
+      const evaluationData = await evaluateQuiz(evaluationInput); 
       setEvaluationResult(evaluationData);
 
-      // 3. Send results to backend to save in Appwrite
       const submissionResponse = await fetch('/api/qa-prep/submit-evaluation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reportId: reportId,
-          evaluationData: evaluationData,
-          userAnswers: answersArray, // Send raw answers for storage if needed
+          evaluationData: evaluationData, 
+          userAnswers: answersArray,
         }),
       });
 
@@ -201,11 +214,15 @@ export default function ExamPage() {
       if (!submissionResponse.ok) {
         throw new Error(submissionResult.message || "Failed to save evaluation results.");
       }
+      
+      // Refresh report data from Appwrite to get the final saved state
+      const updatedReport = await databases.getDocument(APPWRITE_DATABASE_ID, QA_REPORTS_COLLECTION_ID, reportId) as QAReport;
+      setReport(updatedReport);
 
       setExamCompleted(true);
       toast({
         title: "Exam Finished & Evaluated!",
-        description: `Your score: ${evaluationData.overallScore}/${report.numQuestionsGenerated}. ${evaluationData.overallFeedback}`,
+        description: `Your score: ${evaluationData.overallScore}/${updatedReport.maxScore || questions.length}. ${evaluationData.overallFeedback}`,
         className: "bg-green-100 border-green-300 text-green-800",
         duration: 8000,
       });
@@ -214,17 +231,20 @@ export default function ExamPage() {
       console.error("Error finishing exam:", err);
       setError(`Failed to submit or evaluate exam: ${err.message}`);
       toast({ title: "Submission Error", description: err.message, variant: "destructive" });
-      // Optionally, revert status if submission fails critically
-      await databases.updateDocument(APPWRITE_DATABASE_ID, QA_REPORTS_COLLECTION_ID, reportId, {
-        status: "error_evaluating" 
-      });
+      try {
+        await databases.updateDocument(APPWRITE_DATABASE_ID, QA_REPORTS_COLLECTION_ID, reportId, {
+            status: "error_evaluating" 
+        });
+      } catch (statusUpdateError) {
+        console.error("Failed to update status to error_evaluating:", statusUpdateError);
+      }
     } finally {
       setIsSubmitting(false);
     }
   }, [isSubmitting, examCompleted, report, questions, userAnswers, reportId, toast]);
 
 
-  const formatTime = (seconds: number | null) => {
+  const formatTimeDisplay = (seconds: number | null) => {
     if (seconds === null) return "00:00";
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -241,7 +261,7 @@ export default function ExamPage() {
     );
   }
 
-  if (error) {
+  if (error && !examCompleted) { // Only show this error if not yet completed (as completion might have its own errors)
     return (
       <div className="space-y-6">
         <Alert variant="destructive">
@@ -257,8 +277,8 @@ export default function ExamPage() {
       </div>
     );
   }
-
-  if (!report || questions.length === 0) {
+  
+  if (!report || (questions.length === 0 && !examCompleted)) {
     return (
       <div className="space-y-6 text-center">
         <p className="text-muted-foreground">Exam data could not be loaded or no questions found.</p>
@@ -271,18 +291,19 @@ export default function ExamPage() {
     );
   }
 
-  const currentQuestionText = questions[currentQuestionIndex];
 
   // Render Exam Completed State / Report View
-  if (examCompleted && evaluationResult) {
+  if (examCompleted && evaluationResult && report) {
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="font-headline text-3xl font-semibold">Exam Report: {report.quizTitle}</h1>
                     <p className="text-muted-foreground mt-1">
-                        Completed: {report.completedAt ? formatTime(new Date(report.completedAt).getTime()/1000) : "N/A"} | 
-                        Score: {evaluationResult.overallScore} / {report.numQuestionsGenerated}
+                        Completed: {report.completedAt ? format(new Date(report.completedAt), 'PPpp') : "N/A"}
+                    </p>
+                    <p className="text-muted-foreground text-lg font-semibold">
+                        Score: {evaluationResult.overallScore} / {report.maxScore || report.numQuestionsGenerated}
                     </p>
                 </div>
                 <Button variant="outline" asChild>
@@ -296,7 +317,6 @@ export default function ExamPage() {
                     <CardTitle className="font-headline text-xl">Overall Feedback</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-lg font-semibold text-primary">Your Score: {evaluationResult.overallScore} / {report.numQuestionsGenerated}</p>
                     <p className="mt-2 whitespace-pre-wrap">{evaluationResult.overallFeedback}</p>
                 </CardContent>
             </Card>
@@ -324,6 +344,7 @@ export default function ExamPage() {
     );
   }
 
+  const currentQuestionText = questions[currentQuestionIndex];
 
   return (
     <div className="space-y-6 flex flex-col h-[calc(100vh-150px)]"> {/* Adjust height as needed */}
@@ -337,7 +358,7 @@ export default function ExamPage() {
                 </CardDescription>
             </div>
             <div className="flex items-center gap-2 p-2 border rounded-md bg-muted text-lg font-semibold font-mono">
-                <Timer className="h-5 w-5 text-primary"/> {formatTime(remainingTime)}
+                <Timer className="h-5 w-5 text-primary"/> {formatTimeDisplay(remainingTime)}
             </div>
           </div>
            <Progress value={((currentQuestionIndex + 1) / questions.length) * 100} className="mt-3 h-2" />
