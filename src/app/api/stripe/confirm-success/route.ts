@@ -22,32 +22,42 @@ interface UserProfileDocument extends Models.Document {
 }
 
 // This endpoint is intended to be the SUCCESS_URL for Stripe redirects.
-// Stripe should be configured to redirect here with client_reference_id (userId) in query params.
+// Stripe should be configured to redirect here.
 export async function GET(request: NextRequest) {
   console.log("API Route: /api/stripe/confirm-success GET request received.");
+  console.log("API Route /confirm-success: Full requested URL:", request.url); // Log the full URL
 
   if (!clientInitialized) {
     console.error("API Route /confirm-success Error: Appwrite client not initialized.", initializationError);
-    // Redirect to a generic error page or dashboard with an error message
-    return NextResponse.redirect(new URL('/payment/cancel?error=server_config', request.url));
+    return NextResponse.redirect(new URL('/payment/cancel?error=server_config&reason=appwrite_init_failed', request.url));
   }
 
   if (!APPWRITE_DATABASE_ID || !USERS_COLLECTION_ID || !TRANSACTIONS_COLLECTION_ID) {
     console.error("API Route /confirm-success Error: Appwrite Database/Collection IDs missing.");
-    return NextResponse.redirect(new URL('/payment/cancel?error=server_db_config', request.url));
+    return NextResponse.redirect(new URL('/payment/cancel?error=server_db_config&reason=appwrite_ids_missing', request.url));
   }
 
   const searchParams = request.nextUrl.searchParams;
   const userId = searchParams.get('client_reference_id');
-  // const sessionId = searchParams.get('session_id'); // Stripe might also send session_id
+  
+  console.log('API Route /confirm-success: Attempting to read search parameters.');
+  console.log('API Route /confirm-success: All received search parameters:');
+  let paramsFound = false;
+  for (const [key, value] of searchParams.entries()) {
+    console.log(`  ${key}: ${value}`);
+    paramsFound = true;
+  }
+  if (!paramsFound) {
+    console.log('  (No search parameters found in the URL)');
+  }
+
 
   if (!userId) {
-    console.error('API Route /confirm-success Error: client_reference_id (userId) missing in redirect from Stripe.');
-    // Redirect to a generic error page or dashboard
+    console.error('API Route /confirm-success Error: client_reference_id (userId) was NOT found in redirect from Stripe.');
     return NextResponse.redirect(new URL('/payment/cancel?error=missing_user_id', request.url));
   }
   
-  console.log(`API Route /confirm-success: Processing for userId: ${userId}`);
+  console.log(`API Route /confirm-success: Successfully extracted userId: ${userId} from client_reference_id.`);
 
   try {
     let userProfileDoc: UserProfileDocument;
@@ -81,7 +91,7 @@ export async function GET(request: NextRequest) {
     console.log(`API Route /confirm-success: Successfully updated Appwrite user document for ${userId}.`);
 
     // Log the transaction
-    const transactionDescription = `EduVoice AI Pro Plan activated via Stripe redirect. ${SUBSCRIPTION_TOKEN_GRANT} tokens added.`;
+    const transactionDescription = `EduVoice AI Pro Plan activated via Stripe success_url redirect. ${SUBSCRIPTION_TOKEN_GRANT} tokens added.`;
     console.log(`API Route /confirm-success: Preparing to log transaction for user ${userId}: ${transactionDescription}`);
     await databases.createDocument(
       APPWRITE_DATABASE_ID,
@@ -89,23 +99,22 @@ export async function GET(request: NextRequest) {
       AppwriteID.unique(),
       {
         user_id: userId,
-        type: 'subscription_purchase_stripe_redirect', // Differentiate from webhook
+        type: 'subscription_purchase_stripe_redirect',
         token_amount_changed: SUBSCRIPTION_TOKEN_GRANT,
         new_balance: newTokenBalance,
         transaction_description: transactionDescription,
         timestamp: new Date().toISOString(),
-        // reference_id: sessionId || undefined, // If session_id is available
       }
     );
     console.log(`API Route /confirm-success: Successfully logged transaction for user ${userId}.`);
-    console.log(`API Route /confirm-success: Successfully processed Stripe redirect for user ${userId}. Tokens added, subscription active.`);
+    console.log(`API Route /confirm-success: Successfully processed Stripe redirect for user ${userId}. Tokens added, subscription active. Redirecting to /payment/success.`);
 
     // Redirect to the visual success page
     return NextResponse.redirect(new URL('/payment/success', request.url));
 
   } catch (error: any) {
     console.error(`API Route /confirm-success Error: Error processing event and updating Appwrite DB for user ${userId}:`, error);
-    // Redirect to a generic error page or the cancel page with an error
     return NextResponse.redirect(new URL(`/payment/cancel?error=processing_failed&details=${encodeURIComponent(error.message)}`, request.url));
   }
 }
+
