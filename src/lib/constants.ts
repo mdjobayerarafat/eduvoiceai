@@ -13,7 +13,7 @@ export const APP_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: Home },
   { label: 'Topic Lecture', href: '/lectures', icon: BookOpen, matchPaths: ['/lectures', '/lectures/history', '/lectures/view'] },
   { label: 'Mock Interview', href: '/interviews', icon: Mic, matchPaths: ['/interviews', '/interviews/history', '/interviews/report'] },
-  { label: 'Q&A Prep', href: '/qa-prep', icon: HelpCircle, matchPaths: ['/qa-prep'] },
+  { label: 'Q&A Prep', href: '/qa-prep', icon: HelpCircle, matchPaths: ['/qa-prep', '/qa-prep/history', '/qa-prep/exam'] },
   { label: 'Learn Language', href: '/language', icon: Languages, matchPaths: ['/language'] },
   { label: 'Meditation', href: '/meditation', icon: Smile, matchPaths: ['/meditation'] },
 ];
@@ -34,3 +34,4 @@ export const USER_NAV_ITEMS = [
   { label: 'Settings', href: '/settings/api-keys' },
   // Logout will be handled by a function in AppHeader
 ];
+

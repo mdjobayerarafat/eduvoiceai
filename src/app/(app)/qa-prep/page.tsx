@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, HelpCircle, Sparkles, FileText, ListOrdered, AlertTriangle, PlayCircle, RotateCcw, Clock } from "lucide-react";
+import { Loader2, HelpCircle, Sparkles, FileText, ListOrdered, AlertTriangle, PlayCircle, RotateCcw, Clock, History } from "lucide-react";
 import { account, APPWRITE_DATABASE_ID, QA_REPORTS_COLLECTION_ID, databases, ID, Permission, Role } from "@/lib/appwrite";
 import { Models, AppwriteException } from "appwrite";
 import { generateQuizQuestions } from "@/ai/flows/quiz-generation-flow";
@@ -110,7 +110,7 @@ export default function QAPrepPage() {
       setIsLoading(false);
       return;
     }
-    const userId = currentUser.$id;
+    const userId = currentUser.$id; // userId is now defined if we reach here
 
     const pdfFile = values.pdfFile[0];
     const numQuestionsSelected = parseInt(values.numQuestions);
@@ -185,7 +185,7 @@ export default function QAPrepPage() {
         throw new Error("The AI did not return any questions. The PDF might be empty, unreadable, or the topic too narrow.");
       }
       
-      setGeneratedQuestionsForDisplay(generatedQuizOutput.questions); // For potential display or future use
+      setGeneratedQuestionsForDisplay(generatedQuizOutput.questions); 
 
       if (!APPWRITE_DATABASE_ID || !QA_REPORTS_COLLECTION_ID) {
         throw new Error("Appwrite DB/Collection ID for QA reports is not configured.");
@@ -194,7 +194,7 @@ export default function QAPrepPage() {
       const quizReportDataToSave: Omit<QAReport, keyof Models.Document | '$permissions' | '$databaseId' | '$collectionId'> = {
         userId: userId,
         pdfFileName: pdfFile.name,
-        quizTitle: `Quiz from ${pdfFile.name}`,
+        quizTitle: generatedQuizOutput.extractedTopicGuess || `Quiz from ${pdfFile.name}`,
         numQuestionsSet: numQuestionsSelected,
         numQuestionsGenerated: generatedQuizOutput.questions.length,
         durationMinutes: durationSelected,
@@ -217,7 +217,7 @@ export default function QAPrepPage() {
       
       setCurrentQuizReport(createdDocument as QAReport);
       setQuizReady(true);
-      form.reset(); // Reset form after successful generation and save
+      form.reset(); 
 
       toast({
         title: "Quiz Generated & Saved!",
@@ -239,17 +239,6 @@ export default function QAPrepPage() {
     }
   }
   
-  const handleStartExam = () => {
-    if (!currentQuizReport) return;
-    // For now, just log. Later, this will navigate to an exam page.
-    console.log("Starting exam with Quiz Report ID:", currentQuizReport.$id);
-    toast({
-      title: "Start Exam Clicked (Conceptual)",
-      description: `Quiz ID: ${currentQuizReport.$id}. Exam taking interface is the next step.`,
-    });
-    // Example: router.push(`/qa-prep/exam/${currentQuizReport.$id}`);
-  };
-  
   const handleGenerateNewQuiz = () => {
     setQuizReady(false);
     setCurrentQuizReport(null);
@@ -259,14 +248,24 @@ export default function QAPrepPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="font-headline text-3xl font-semibold flex items-center">
-          <HelpCircle className="mr-3 h-8 w-8 text-primary" /> AI-Powered Q&A Prep
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Upload a PDF, select settings, and let AI generate a quiz. Then, take the exam!
-        </p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="font-headline text-3xl font-semibold flex items-center">
+            <HelpCircle className="mr-3 h-8 w-8 text-primary" /> AI-Powered Q&A Prep
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Upload a PDF, select settings, and let AI generate a quiz. Then, take the exam!
+          </p>
+        </div>
+        {!quizReady && (
+          <Button variant="outline" asChild>
+            <Link href="/qa-prep/history">
+              <History className="mr-2 h-4 w-4" /> View My Quizzes
+            </Link>
+          </Button>
+        )}
       </div>
+
 
       {error && (
         <Alert variant="destructive">
@@ -377,7 +376,7 @@ export default function QAPrepPage() {
               <ListOrdered className="mr-2 h-6 w-6 text-primary" /> Quiz Ready!
             </CardTitle>
             <CardDescription>
-              Your quiz based on "{currentQuizReport.pdfFileName}" is prepared.
+              Your quiz based on "{currentQuizReport.pdfFileName || currentQuizReport.quizTitle}" is prepared.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -387,8 +386,10 @@ export default function QAPrepPage() {
               <p><strong>Duration:</strong> {currentQuizReport.durationMinutes} minutes</p>
             </div>
             <div className="flex flex-col sm:flex-row gap-4">
-              <Button onClick={handleStartExam} size="lg" className="flex-1">
-                <PlayCircle className="mr-2 h-5 w-5" /> Start Exam
+              <Button asChild size="lg" className="flex-1">
+                <Link href={`/qa-prep/exam/${currentQuizReport.$id}`}>
+                    <PlayCircle className="mr-2 h-5 w-5" /> Start Exam
+                </Link>
               </Button>
               <Button onClick={handleGenerateNewQuiz} variant="outline" className="flex-1">
                 <RotateCcw className="mr-2 h-4 w-4" /> Generate New Quiz
@@ -417,10 +418,10 @@ export default function QAPrepPage() {
             </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
-            <p>This feature saves generated quizzes to the <strong>qa_reports</strong> collection. The schema includes:</p>
+            <p>This feature saves generated quizzes to the <strong>qa_reports</strong> collection. The schema includes attributes like:</p>
             <ul className="list-disc pl-5 space-y-1 text-xs">
                 <li>`userId`, `pdfFileName`, `quizTitle`, `numQuestionsSet`, `numQuestionsGenerated`, `durationMinutes`, `generatedQuestions` (JSON string), `status`.</li>
-                <li>Future fields: `overallScore`, `maxScore`, `overallFeedback`, `userAnswersAndFeedback` (JSON string), `startedAt`, `completedAt`.</li>
+                <li>After exam completion: `overallScore`, `maxScore`, `overallFeedback`, `userAnswersAndFeedback` (JSON string), `startedAt`, `completedAt`.</li>
             </ul>
              <p className="text-xs text-destructive mt-2">
               Next steps: Implement the exam taking interface, timer, answer submission, AI evaluation, and detailed report display.
@@ -431,4 +432,3 @@ export default function QAPrepPage() {
   );
 }
 
-    
