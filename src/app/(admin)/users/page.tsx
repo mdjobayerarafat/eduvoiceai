@@ -10,7 +10,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Users, MoreHorizontal, Search, Filter, Download, ShieldCheck, Ban, TrendingUp, Loader2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-// Import 'users' directly (it might be undefined if Appwrite.Users fails to load)
 import { account, users, AppwriteException } from "@/lib/appwrite"; 
 import type { AppwriteUser } from "@/types/appwriteUser";
 import { formatDistanceToNow } from 'date-fns';
@@ -43,7 +42,7 @@ export default function ManageUsersPage() {
         // Critical Check: Ensure the 'users' service is available
         if (!users) {
           console.error("ManageUsersPage: Appwrite Users service is not available. Check console for 'CRITICAL' errors from appwrite.ts.");
-          setError("Appwrite Users service could not be initialized. User list cannot be fetched. Please check the browser console for more details.");
+          setError("Appwrite Users service could not be initialized. User list cannot be fetched. Please check the browser console for more details from 'src/lib/appwrite.ts'.");
           setIsLoading(false);
           return;
         }

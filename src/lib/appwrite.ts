@@ -4,8 +4,13 @@ import * as Appwrite from 'appwrite';
 // For debugging: Log the imported Appwrite object to see its structure
 console.log('Appwrite SDK imported:', Appwrite);
 if (Appwrite) {
-  console.log('Appwrite.Users exists:', typeof Appwrite.Users !== 'undefined');
   console.log('Appwrite.Client exists:', typeof Appwrite.Client !== 'undefined');
+  console.log('Appwrite.Account exists:', typeof Appwrite.Account !== 'undefined');
+  console.log('Appwrite.Databases exists:', typeof Appwrite.Databases !== 'undefined');
+  console.log('Appwrite.Storage exists:', typeof Appwrite.Storage !== 'undefined');
+  console.log('Appwrite.Avatars exists:', typeof Appwrite.Avatars !== 'undefined');
+  console.log('Appwrite.Users exists:', typeof Appwrite.Users !== 'undefined'); // This is the key check
+  console.log('Appwrite.ID exists:', typeof Appwrite.ID !== 'undefined');
 }
 
 
@@ -67,13 +72,14 @@ export const VOUCHERS_COLLECTION_ID = process.env.NEXT_PUBLIC_VOUCHERS_COLLECTIO
 export const PROFILE_IMAGES_BUCKET_ID = process.env.NEXT_PUBLIC_APPWRITE_PROFILE_IMAGES_BUCKET_ID!;
 
 if (typeof VOUCHERS_COLLECTION_ID !== 'string' || VOUCHERS_COLLECTION_ID.trim() === '') {
-  throw new Error(
-    `VOUCHERS_COLLECTION_ID is not a valid string or is empty. Value: "${VOUCHERS_COLLECTION_ID}", Type: ${typeof VOUCHERS_COLLECTION_ID}. Please check your .env file and ensure your Next.js server has been restarted.`
+  // This was a throw, changing to warn to avoid app crash if only this is missing temporarily
+  console.warn( 
+    `VOUCHERS_COLLECTION_ID is not a valid string or is empty. Value: "${VOUCHERS_COLLECTION_ID}", Type: ${typeof VOUCHERS_COLLECTION_ID}. Please check your .env file and ensure your Next.js server has been restarted. Voucher functionality will be affected.`
   );
 }
 
 if (typeof PROFILE_IMAGES_BUCKET_ID !== 'string' || PROFILE_IMAGES_BUCKET_ID.trim() === '') {
-  console.warn( // Use warn instead of throw for this, as profile page might be accessed before setup
+  console.warn( 
     `PROFILE_IMAGES_BUCKET_ID is not a valid string or is empty. Value: "${PROFILE_IMAGES_BUCKET_ID}", Type: ${typeof PROFILE_IMAGES_BUCKET_ID}. Please check your .env file and ensure your Next.js server has been restarted. Profile image functionality will be affected.`
   );
 }
