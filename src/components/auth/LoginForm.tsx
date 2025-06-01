@@ -50,6 +50,7 @@ export function LoginForm() {
         description: `Welcome back!`,
       });
       
+      // Redirect to dashboard or intended page
       router.push("/dashboard");
 
     } catch (error: any) {
@@ -60,7 +61,7 @@ export function LoginForm() {
         } else if (error.type === 'user_not_found') {
           description = "No account found with this email address.";
         } else {
-          description = error.message;
+          description = error.message; // Use Appwrite's error message
         }
       } else if (error.message) {
         description = error.message;
@@ -70,17 +71,17 @@ export function LoginForm() {
         description: description,
         variant: "destructive",
       });
-      // Optionally set form error for a more integrated feel
-      form.setError("password", { message: "Invalid credentials" });
+      // Optionally set form error for a more integrated feel, though toast is often sufficient
+      form.setError("password", { message: "Invalid credentials" }); // Generic error on a field
     }
   }
 
   return (
     <Card className="w-full"> 
       <CardHeader>
-        <CardTitle className="font-headline text-2xl">Login</CardTitle>
+        <CardTitle className="font-headline text-2xl">Login to EduVoice AI</CardTitle>
         <CardDescription>
-          Enter your credentials to access your EduVoice AI account.
+          Enter your credentials to access your account.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -128,9 +129,9 @@ export function LoginForm() {
             <Link href="/register">Register</Link>
           </Button>
         </p>
-        {/* Add password reset link later if needed */}
+        {/* You can add a password reset link here if you implement that feature */}
         {/* <Button variant="link" size="sm" asChild className="text-xs p-0 h-auto">
-            <Link href="/forgot-password">Forgot Password?</Link>
+            <Link href="/(auth)/reset-password">Forgot Password?</Link>
         </Button> */}
       </CardFooter>
     </Card>
