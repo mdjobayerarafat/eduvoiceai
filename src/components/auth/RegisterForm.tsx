@@ -47,13 +47,11 @@ export function RegisterForm() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     if (typeof window === 'undefined') return;
 
-    form.clearErrors(); // Clear previous errors
+    form.clearErrors(); 
 
     try {
       const newUser = await account.create('unique()', values.email, values.password, values.username);
       
-      // After successful registration, set initial tokens and log the user in.
-      // Then create a session
       await account.createEmailPasswordSession(values.email, values.password);
 
       try {
@@ -65,17 +63,24 @@ export function RegisterForm() {
           body: JSON.stringify({
             userId: newUser.$id, 
             token_balance: INITIAL_FREE_TOKENS,
-            subscription_status: 'free_tier', // Set initial subscription status
+            subscription_status: 'free_tier', 
           }),
         });
 
         if (!tokenUpdateResponse.ok) {
-          const errorData = await tokenUpdateResponse.json();
-          console.error('Failed to set initial tokens for new user:', errorData.message);
+          let errorData = { message: "Failed to set initial tokens. Server responded with an error." };
+          try {
+            errorData = await tokenUpdateResponse.json();
+          } catch (parseErr) {
+            // If parsing JSON fails, use the status text or a generic message
+            errorData.message = `Failed to set initial tokens. Server status: ${tokenUpdateResponse.status} ${tokenUpdateResponse.statusText}`;
+          }
+          console.error('Failed to set initial tokens for new user:', errorData);
           toast({
             title: "Account Created, Token Init Failed",
-            description: `Your account was created, but we couldn't set your initial tokens: ${errorData.message || 'Please contact support.'}. You can still log in.`,
+            description: `Your account was created, but we couldn't set your initial tokens: ${errorData.message}. Please contact support.`,
             variant: "destructive",
+            duration: 8000, 
           });
         } else {
            toast({
@@ -83,12 +88,13 @@ export function RegisterForm() {
             description: `Your account has been created with ${INITIAL_FREE_TOKENS.toLocaleString()} free tokens. You are now logged in.`,
           });
         }
-      } catch (initError) {
+      } catch (initError: any) {
         console.error('Error calling initial token setup API:', initError);
         toast({
-          title: "Account Created, Token Init Error",
-          description: "Your account was created, but there was an issue setting up your initial tokens. You can still log in.",
+          title: "Account Created, Token Setup Network Error",
+          description: `Your account was created, but there was a network issue setting up your initial tokens: ${initError.message || 'Please check your connection or contact support.'}.`,
           variant: "destructive",
+          duration: 8000,
         });
       }
       router.push("/dashboard"); 
