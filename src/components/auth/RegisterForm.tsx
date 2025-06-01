@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { OAuthButtons } from "./OAuthButtons";
 import { useToast } from "@/hooks/use-toast";
 
 const formSchema = z.object({
@@ -44,6 +45,9 @@ export function RegisterForm() {
     form.clearErrors(); 
 
     try {
+      // The backend API /api/custom-auth/register now handles:
+      // 1. Creating user in Appwrite Auth
+      // 2. Creating corresponding document in custom 'users' collection with initial tokens
       const response = await fetch('/api/custom-auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -51,19 +55,18 @@ export function RegisterForm() {
       });
 
       let result;
+      let responseTextForError = "";
       try {
-        result = await response.json();
-      } catch (jsonError: any) {
-        let textResponse = "";
-        try {
-          textResponse = await response.text();
-        } catch (textError) {
-          // Ignore if reading as text also fails
+        if (!response.ok) {
+          // Try to get text for error context if JSON parsing fails
+          responseTextForError = await response.text();
         }
-        console.error("API response was not valid JSON. Status:", response.status, "Raw response snippet:", textResponse.substring(0, 500));
+        result = JSON.parse(responseTextForError || await response.text()); // If responseTextForError is empty, parse original text
+      } catch (jsonError: any) {
+        console.error("API response was not valid JSON. Status:", response.status, "Raw response snippet:", responseTextForError.substring(0, 500) || "Response body was empty or unreadable.");
         toast({
           title: "Registration Failed",
-          description: `Received an invalid response from the server (status ${response.status}). ${textResponse ? `Details: ${textResponse.substring(0,100)}...` : 'Please check server logs.'}`,
+          description: `Received an invalid response from the server (status ${response.status}). ${responseTextForError ? `Details: ${responseTextForError.substring(0,100)}...` : 'Please check server logs.'}`,
           variant: "destructive",
         });
         return;
@@ -75,16 +78,19 @@ export function RegisterForm() {
           description: result.message || "An unknown error occurred during registration.",
           variant: "destructive",
         });
-        // Optionally set form errors if your API returns specific field errors
-        // For example: if (result.fieldErrors?.email) form.setError("email", { message: result.fieldErrors.email });
+        if (result.type === 'user_email_already_exists' || result.message?.toLowerCase().includes('email already exists')) {
+            form.setError("email", {message: "This email address is already in use."});
+        } else if (result.type === 'user_already_exists' || result.message?.toLowerCase().includes('user already exists')) {
+             form.setError("username", {message: "This username is already taken."});
+        }
         return;
       }
       
       toast({
         title: "Registration Successful!",
-        description: `Your account for ${result.user?.email || values.email} has been created. Please log in.`,
+        description: `Your account for ${values.email} has been created. Please log in.`,
       });
-      router.push("/login");
+      router.push("/login"); // Redirect to login page after successful registration
 
     } catch (error: any) {
       console.error("Network or unexpected error during registration:", error);
@@ -99,10 +105,9 @@ export function RegisterForm() {
   return (
     <Card className="w-full">
       <CardHeader>
-        <CardTitle className="font-headline text-2xl">Create an Account (Custom DB)</CardTitle>
+        <CardTitle className="font-headline text-2xl">Create an Account</CardTitle>
         <CardDescription>
           Join EduVoice AI to start your learning journey. 
-          (Demo: Uses custom DB. Insecure password handling in this example.)
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -147,19 +152,14 @@ export function RegisterForm() {
                 </FormItem>
               )}
             />
-            {/* Removed form.formState.errors.root?.serverError as it's not standard */}
             <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-              {form.formState.isSubmitting ? "Creating Account..." : "Register (Custom)"}
+              {form.formState.isSubmitting ? "Creating Account..." : "Register"}
             </Button>
           </form>
         </Form>
-        {/* 
+        
         <OAuthButtons /> 
-        <p className="text-xs text-muted-foreground mt-2 text-center">
-          Note: OAuth buttons use Appwrite's native authentication and are not compatible
-          with this custom database registration flow. They are disabled for this example.
-        </p>
-        */}
+        
       </CardContent>
       <CardFooter className="flex justify-center">
         <p className="text-sm text-muted-foreground">
