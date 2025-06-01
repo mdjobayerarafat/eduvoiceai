@@ -32,6 +32,14 @@ interface InterviewExchange {
   answer: string;
 }
 
+// Define a type for the interview configuration that includes all potential API keys
+type FullInterviewConfig = Omit<InterviewConfigInput, 'geminiApiKey' | 'openaiApiKey' | 'claudeApiKey'> & {
+  geminiApiKey?: string;
+  openaiApiKey?: string;
+  claudeApiKey?: string;
+};
+
+
 const SpeechRecognition = (typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)) || null;
 const speechSynthesis = (typeof window !== 'undefined' && window.speechSynthesis) || null;
 
@@ -41,8 +49,7 @@ const MOCK_INTERVIEW_TOKEN_COST = 1000;
 
 const MockInterviewPage: NextPage = () => {
   const [stage, setStage] = useState<InterviewStage>("setup");
-  const [interviewConfig, setInterviewConfig] = useState<Omit<InterviewConfigInput, 'geminiApiKey' > | null>(null); // Store config without API key
-  const [userGeminiApiKey, setUserGeminiApiKey] = useState<string | undefined>(undefined);
+  const [interviewConfig, setInterviewConfig] = useState<FullInterviewConfig | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
   const [interviewHistory, setInterviewHistory] = useState<InterviewExchange[]>([]);
   const [userAnswer, setUserAnswer] = useState<string>("");
@@ -104,7 +111,7 @@ const MockInterviewPage: NextPage = () => {
         return prevTime - 1;
       });
     }, 1000);
-  }, []);
+  }, []); // Removed handleEndInterview from dependencies
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
@@ -235,31 +242,43 @@ const MockInterviewPage: NextPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [interviewHistory, currentQuestion, finalFeedback]);
 
-  const handleSetupComplete = async (data: Omit<InterviewConfigInput, 'geminiApiKey'>) => {
+  // Separate config state without API keys, used for saving.
+  const [baseInterviewConfig, setBaseInterviewConfig] = useState<Omit<InterviewConfigInput, 'geminiApiKey'|'openaiApiKey'|'claudeApiKey' > | null>(null);
+
+  const handleSetupComplete = async (data: Omit<InterviewConfigInput, 'geminiApiKey'|'openaiApiKey'|'claudeApiKey'>) => {
     setStage("token_check_loading");
     setError(null);
-    setInterviewConfig(data); 
+    setBaseInterviewConfig(data); // Store base config for saving report
     setInterviewHistory([]);
     setFinalFeedback(null);
     setCurrentQuestion(null);
     setUserAnswer("");
     setIsVideoEnabled(true);
 
-    // Retrieve user's Gemini API key from localStorage
-    let userKey: string | undefined = undefined;
+    let userGeminiApiKey: string | undefined = undefined;
+    let userOpenaiApiKey: string | undefined = undefined;
+    let userClaudeApiKey: string | undefined = undefined;
+
     try {
       const savedKeysRaw = localStorage.getItem("eduvoice_api_keys");
       if (savedKeysRaw) {
         const savedKeys = JSON.parse(savedKeysRaw);
-        if (savedKeys.geminiApiKey) {
-          userKey = savedKeys.geminiApiKey;
-          setUserGeminiApiKey(userKey); // Store for later use in the session
-        }
+        userGeminiApiKey = savedKeys.geminiApiKey;
+        userOpenaiApiKey = savedKeys.openaiApiKey;
+        userClaudeApiKey = savedKeys.claudeApiKey;
       }
     } catch (e) {
       console.warn("Could not read API keys from localStorage", e);
     }
-
+    
+    // Construct the full config with API keys for Genkit flows
+    const fullConfigForFlow: InterviewConfigInput = {
+      ...data,
+      ...(userGeminiApiKey && { geminiApiKey: userGeminiApiKey }),
+      ...(userOpenaiApiKey && { openaiApiKey: userOpenaiApiKey }),
+      ...(userClaudeApiKey && { claudeApiKey: userClaudeApiKey }),
+    };
+    setInterviewConfig(fullConfigForFlow); // Store full config for current session
 
     let currentUser: Models.User<Models.Preferences> | null = null;
     try {
@@ -277,7 +296,6 @@ const MockInterviewPage: NextPage = () => {
     }
     const userId = currentUser.$id;
 
-    // 1. Deduct tokens
     try {
       const tokenResponse = await fetch('/api/user/deduct-tokens', {
         method: 'POST',
@@ -323,21 +341,21 @@ const MockInterviewPage: NextPage = () => {
       return;
     }
 
-    // 2. Proceed to get first question if token deduction was successful
     setStage("first_question_loading");
+    let attemptDetails = "";
+    if (userGeminiApiKey) attemptDetails += "(Attempting your Gemini key). ";
+    else if (userOpenaiApiKey) attemptDetails += "(Attempting your OpenAI key). ";
+    else if (userClaudeApiKey) attemptDetails += "(Attempting your Claude key). ";
+
     try {
-      const flowInput: InterviewConfigInput = {
-        ...data,
-        ...(userKey && { geminiApiKey: userKey }),
-      };
-      const result: FirstQuestionOutput = await getFirstInterviewQuestion(flowInput);
+      const result: FirstQuestionOutput = await getFirstInterviewQuestion(fullConfigForFlow);
       setCurrentQuestion(result.firstQuestion);
       setStage("interviewing");
       startTimer();
       speakText(result.firstQuestion); 
       toast({
         title: "Interview Started!",
-        description: "The first question is ready. The timer has begun.",
+        description: `The first question is ready. ${attemptDetails}The timer has begun.`,
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
@@ -345,7 +363,7 @@ const MockInterviewPage: NextPage = () => {
       setStage("error");
       toast({
         title: "Error Starting Interview",
-        description: `Could not fetch the first question. Please try again. ${userKey ? "(Used your API key)" : ""}`,
+        description: `Could not fetch the first question. ${attemptDetails}Please try again.`,
         variant: "destructive",
       });
     }
@@ -374,7 +392,7 @@ const MockInterviewPage: NextPage = () => {
             } else if (e.name === 'InvalidStateError') {
                 errorMsg += "Speech recognition is already active or in an invalid state. Please try again.";
             } else {
-                errorMsg += "Please check your microphone and browser settings.";
+                errorMsg += "Please check your browser settings.";
             }
          } else {
             errorMsg += "An unexpected error occurred. Please check your microphone.";
@@ -405,12 +423,15 @@ const MockInterviewPage: NextPage = () => {
 
     const currentExchange: InterviewExchange = { question: currentQuestion, answer: userAnswer.trim() };
     
+    let attemptDetails = "";
+    if (interviewConfig.geminiApiKey) attemptDetails += "(Attempting your Gemini key). ";
+    else if (interviewConfig.openaiApiKey) attemptDetails += "(Attempting your OpenAI key). ";
+    else if (interviewConfig.claudeApiKey) attemptDetails += "(Attempting your Claude key). ";
+
     try {
       const input: InterviewProgressionInput = {
-        resume: interviewConfig.resume,
-        jobDescription: interviewConfig.jobDescription,
+        ...interviewConfig, // This now includes all API keys
         interviewHistory: [...interviewHistory, { question: currentQuestion, answer: userAnswer.trim() }],
-        ...(userGeminiApiKey && { geminiApiKey: userGeminiApiKey }),
       };
       const result: InterviewProgressionOutput = await getFeedbackAndNextQuestion(input);
       
@@ -429,13 +450,13 @@ const MockInterviewPage: NextPage = () => {
       setUserAnswer("");
 
     } catch (err) {
-      setInterviewHistory(prev => [...prev, currentExchange]); // Save progress even on error
+      setInterviewHistory(prev => [...prev, currentExchange]); 
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to get next question: ${errorMessage}`);
       setStage("error"); 
       toast({
         title: "Error Processing Answer",
-        description: `Could not get the next question. ${userGeminiApiKey ? "(Used your API key)" : ""} Please try again if the issue persists.`,
+        description: `Could not get the next question. ${attemptDetails}Please try again if the issue persists.`,
         variant: "destructive",
       });
       setIsAISpeaking(false);
@@ -460,33 +481,33 @@ const MockInterviewPage: NextPage = () => {
         description: `${endMessage} Generating final feedback...`,
     });
 
-    if (!interviewConfig ) { 
+    if (!baseInterviewConfig || !interviewConfig ) { 
         toast({ title: "Not Enough Data", description: "Interview setup not complete.", variant: "destructive" });
         setStage("setup"); 
         return;
     }
     
     let finalInterviewHistory = [...interviewHistory];
-    // If there's a current question and an answer for it, and it wasn't the one that errored out or was the last one, add it.
     if (currentQuestion && userAnswer.trim() && (reason === "timer_elapsed" || reason === "timer_wrapping_up" || reason === "manual")) {
         const lastAnswerNotYetInHistory = !finalInterviewHistory.some(ex => ex.question === currentQuestion && ex.answer === userAnswer.trim());
         if (lastAnswerNotYetInHistory) {
             finalInterviewHistory.push({ question: currentQuestion, answer: userAnswer.trim() });
         }
     }
-    // Ensure at least one exchange exists if the interview started but ended abruptly before first submission
     if (finalInterviewHistory.length === 0 && currentQuestion && userAnswer.trim()){
          finalInterviewHistory.push({ question: currentQuestion, answer: userAnswer.trim() });
     }
 
-
     let generatedFeedback: FinalInterviewFeedbackOutput | null = null;
+    let attemptDetails = "";
+    if (interviewConfig.geminiApiKey) attemptDetails += "(Attempting your Gemini key). ";
+    else if (interviewConfig.openaiApiKey) attemptDetails += "(Attempting your OpenAI key). ";
+    else if (interviewConfig.claudeApiKey) attemptDetails += "(Attempting your Claude key). ";
+
     try {
       const input: FinalInterviewFeedbackInput = {
-        resume: interviewConfig.resume,
-        jobDescription: interviewConfig.jobDescription,
+        ...interviewConfig, // Includes all API keys
         fullInterviewHistory: finalInterviewHistory.map(h => ({ question: h.question, answer: h.answer })),
-        ...(userGeminiApiKey && { geminiApiKey: userGeminiApiKey }),
       };
       generatedFeedback = await getFinalInterviewFeedback(input);
       setFinalFeedback(generatedFeedback);
@@ -500,26 +521,25 @@ const MockInterviewPage: NextPage = () => {
 
       speakText(farewellMessage);
       
-      if (generatedFeedback) {
-        await saveInterviewReport(generatedFeedback, interviewConfig, finalInterviewHistory);
+      if (generatedFeedback && baseInterviewConfig) { // Ensure baseInterviewConfig exists
+        await saveInterviewReport(generatedFeedback, baseInterviewConfig, finalInterviewHistory);
       }
 
     } catch (err) {
       let displayErrorMessage: string;
       let toastDescription: string;
-      const usingUserKeyMsg = userGeminiApiKey ? "(Used your API key)" : "";
-
+      
       if (err instanceof Error) {
         if (err.message.includes("503") || err.message.toLowerCase().includes("overloaded") || err.message.toLowerCase().includes("service unavailable")) {
-          displayErrorMessage = `The AI model is currently overloaded and couldn't generate your final feedback ${usingUserKeyMsg}. This is a temporary issue with the AI service. Please try again later.`;
-          toastDescription = `The AI model is currently overloaded, so final feedback could not be generated ${usingUserKeyMsg}. Please try again in a few moments.`;
+          displayErrorMessage = `The AI model is currently overloaded ${attemptDetails}and couldn't generate your final feedback. This is a temporary issue with the AI service. Please try again later.`;
+          toastDescription = `The AI model is currently overloaded, so final feedback could not be generated ${attemptDetails}. Please try again in a few moments.`;
         } else {
-          displayErrorMessage = `Failed to get final feedback ${usingUserKeyMsg}: ${err.message}`;
-          toastDescription = `Could not generate the final interview report ${usingUserKeyMsg}. An unexpected error occurred.`;
+          displayErrorMessage = `Failed to get final feedback ${attemptDetails}: ${err.message}`;
+          toastDescription = `Could not generate the final interview report ${attemptDetails}. An unexpected error occurred.`;
         }
       } else {
-        displayErrorMessage = `Failed to get final feedback ${usingUserKeyMsg} due to an unknown error.`;
-        toastDescription = `Could not generate the final interview report ${usingUserKeyMsg}. An unexpected error occurred.`;
+        displayErrorMessage = `Failed to get final feedback ${attemptDetails}due to an unknown error.`;
+        toastDescription = `Could not generate the final interview report ${attemptDetails}. An unexpected error occurred.`;
       }
       
       setError(displayErrorMessage);
@@ -535,7 +555,7 @@ const MockInterviewPage: NextPage = () => {
 
   const saveInterviewReport = async (
     feedback: FinalInterviewFeedbackOutput,
-    config: Omit<InterviewConfigInput, 'geminiApiKey'>,
+    config: Omit<InterviewConfigInput, 'geminiApiKey'|'openaiApiKey'|'claudeApiKey'>, // Use base config for saving
     history: InterviewExchange[]
   ) => {
     if (!APPWRITE_DATABASE_ID || !INTERVIEWS_COLLECTION_ID) {
@@ -629,7 +649,7 @@ const MockInterviewPage: NextPage = () => {
     setStage("setup");
     setError(null);
     setInterviewConfig(null);
-    setUserGeminiApiKey(undefined);
+    setBaseInterviewConfig(null);
     setInterviewHistory([]);
     setCurrentQuestion(null);
     setUserAnswer("");
@@ -685,7 +705,7 @@ const MockInterviewPage: NextPage = () => {
           <CardHeader>
             <CardTitle className="font-headline text-2xl">Interview Setup</CardTitle>
             <CardDescription>
-              Fill in the details below to configure your mock interview session ({INTERVIEW_DURATION_MINUTES} minutes). Cost: {MOCK_INTERVIEW_TOKEN_COST} tokens. You can use your own Gemini API Key (set in Settings) for potentially enhanced responses.
+              Fill in the details below to configure your mock interview session ({INTERVIEW_DURATION_MINUTES} minutes). Cost: {MOCK_INTERVIEW_TOKEN_COST} tokens. You can use your own API Keys (set in Settings) for potentially enhanced responses.
             </CardDescription>
           </CardHeader>
           <CardContent>

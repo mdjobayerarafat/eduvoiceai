@@ -2,7 +2,7 @@
 'use server';
 /**
  * @fileOverview Generates final feedback and a score for a completed mock interview.
- * Can use user-provided Gemini API key, with fallback.
+ * Implements a cascading API key fallback: User Gemini -> User OpenAI -> User Claude -> Platform Default.
  *
  * - getFinalInterviewFeedback - A function that processes the entire interview and generates overall feedback and score.
  * - FinalInterviewFeedbackInput - The input type for the getFinalInterviewFeedback function.
@@ -11,6 +11,8 @@
 
 import { genkit as baseGenkit } from 'genkit';
 import { googleAI } from '@genkit-ai/googleai';
+import { openai } from '@genkit-ai/openai'; // Ensure @genkit-ai/openai is installed if used
+import { anthropic } from '@genkit-ai/anthropic'; // Ensure @genkit-ai/anthropic is installed if used
 import { ai } from '@/ai/genkit'; // Global AI instance
 import { z } from 'genkit';
 
@@ -26,6 +28,8 @@ const FinalInterviewFeedbackInputSchema = z.object({
   jobDescription: z.string().describe('The job description for the role.'),
   fullInterviewHistory: z.array(InterviewExchangeSchema).describe('The complete history of questions asked and answers given during the interview.'),
   geminiApiKey: z.string().optional().describe('Optional Google Gemini API key to use for this request.'),
+  openaiApiKey: z.string().optional().describe('Optional OpenAI API key to use for this request.'),
+  claudeApiKey: z.string().optional().describe('Optional Anthropic Claude API key to use for this request.'),
 });
 export type FinalInterviewFeedbackInput = z.infer<typeof FinalInterviewFeedbackInputSchema>;
 
@@ -44,9 +48,16 @@ const FinalInterviewFeedbackOutputSchema = z.object({
 });
 export type FinalInterviewFeedbackOutput = z.infer<typeof FinalInterviewFeedbackOutputSchema>;
 
+// Schema for the actual data passed to the prompt template
+const PromptDataTypeSchema = z.object({
+    resume: z.string(),
+    jobDescription: z.string(),
+    fullInterviewHistory: z.array(InterviewExchangeSchema),
+});
+
 const FINAL_FEEDBACK_PROMPT_CONFIG_BASE = {
   name: 'finalInterviewFeedbackPrompt',
-  input: { schema: FinalInterviewFeedbackInputSchema },
+  input: { schema: PromptDataTypeSchema }, // Actual data for the prompt template
   output: { schema: FinalInterviewFeedbackOutputSchema },
   prompt: `You are an AI career coach. The candidate has just completed a mock interview.
 The candidate's resume, the job description for the role they interviewed for, and the full transcript of the interview are provided below.
@@ -76,60 +87,84 @@ Respond strictly in the specified JSON output format. Ensure the 'overallScore' 
 `,
 };
 
-const finalInterviewFeedbackGlobalPrompt = ai.definePrompt(FINAL_FEEDBACK_PROMPT_CONFIG_BASE);
+const finalInterviewFeedbackGlobalPlatformPrompt = ai.definePrompt(FINAL_FEEDBACK_PROMPT_CONFIG_BASE);
 
 async function generateFinalFeedbackLogic(input: FinalInterviewFeedbackInput): Promise<FinalInterviewFeedbackOutput> {
-  let llmResponse;
-  let userKeyFailed = false;
+  let llmResponse: FinalInterviewFeedbackOutput | undefined;
 
-  if (input.geminiApiKey) {
-    console.log("Attempting to use user-provided Gemini API key for final interview feedback.");
-    const tempAi = baseGenkit({
-      plugins: [googleAI({ apiKey: input.geminiApiKey })],
-      model: ai.getModel(),
-    });
-    const tempPrompt = tempAi.definePrompt({
-      ...FINAL_FEEDBACK_PROMPT_CONFIG_BASE,
-      name: `${FINAL_FEEDBACK_PROMPT_CONFIG_BASE.name}_userKeyed_${Date.now()}`,
-    });
-    try {
-      const { output } = await tempPrompt(input);
-      llmResponse = output;
-      console.log("Successfully used user-provided Gemini API key for final feedback.");
-    } catch (e: any) {
-      console.warn("Error using user-provided Gemini API key for final feedback:", e.message);
-      const errorMessage = (e.message || "").toLowerCase();
-      const errorStatus = e.status || e.code;
-      const errorType = (e.type || "").toLowerCase();
-      if (
-        errorMessage.includes("api key") ||
-        errorMessage.includes("permission denied") ||
-        errorMessage.includes("quota exceeded") ||
-        errorMessage.includes("authentication failed") ||
-        errorMessage.includes("invalid_request") ||
-        errorType.includes("api_key") ||
-        errorStatus === 401 || errorStatus === 403 || errorStatus === 429 ||
-        (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7)
-      ) {
-        userKeyFailed = true;
-        console.log("User's API key failed for final feedback. Attempting fallback to platform key.");
-      } else {
-        throw e;
+  const promptData: z.infer<typeof PromptDataTypeSchema> = {
+    resume: input.resume,
+    jobDescription: input.jobDescription,
+    fullInterviewHistory: input.fullInterviewHistory,
+  };
+
+  const attempts = [
+    {
+      providerName: 'Gemini',
+      apiKey: input.geminiApiKey,
+      plugin: googleAI,
+      modelName: 'googleai/gemini-2.0-flash',
+    },
+    {
+      providerName: 'OpenAI',
+      apiKey: input.openaiApiKey,
+      plugin: openai,
+      modelName: 'openai/gpt-4o-mini',
+    },
+    {
+      providerName: 'Claude',
+      apiKey: input.claudeApiKey,
+      plugin: anthropic,
+      modelName: 'anthropic/claude-3-haiku-20240307',
+    },
+  ];
+
+  for (const attempt of attempts) {
+    if (attempt.apiKey && attempt.plugin) {
+      console.log(`Attempting to use user-provided ${attempt.providerName} API key for final interview feedback.`);
+      try {
+        const tempAi = baseGenkit({
+          plugins: [attempt.plugin({ apiKey: attempt.apiKey })],
+        });
+        const tempPrompt = tempAi.definePrompt({
+          ...FINAL_FEEDBACK_PROMPT_CONFIG_BASE,
+          name: `${FINAL_FEEDBACK_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
+          config: { model: attempt.modelName },
+        });
+
+        const { output } = await tempPrompt(promptData);
+        llmResponse = output;
+        if (!llmResponse) throw new Error(`Model (${attempt.providerName}) returned no output.`);
+        
+        console.log(`Successfully used user-provided ${attempt.providerName} API key for final feedback.`);
+        return llmResponse;
+      } catch (e: any) {
+        console.warn(`Error using user-provided ${attempt.providerName} API key for final feedback:`, e.message);
+        const errorMessage = (e.message || "").toLowerCase();
+        const errorStatus = e.status || e.code;
+        const errorType = (e.type || "").toLowerCase();
+        const isKeyError =
+          errorMessage.includes("api key") ||
+          errorMessage.includes("permission denied") ||
+          errorMessage.includes("quota exceeded") ||
+          errorMessage.includes("authentication failed") ||
+          errorMessage.includes("invalid_request") ||
+          errorMessage.includes("billing") ||
+          errorMessage.includes("insufficient_quota") ||
+          errorType.includes("api_key") ||
+          errorStatus === 401 || errorStatus === 403 || errorStatus === 429 ||
+          (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) ||
+          (e.response && e.response.data && e.response.data.error && /api key/i.test(e.response.data.error.message));
+
+        if (!isKeyError) throw e;
+        console.log(`User's ${attempt.providerName} API key failed. Attempting next fallback.`);
       }
     }
   }
 
-  if (!input.geminiApiKey || userKeyFailed) {
-    if (userKeyFailed) {
-      console.log("Falling back to platform's default API key for final interview feedback.");
-    } else {
-      console.log("Using platform's default API key for final interview feedback (no user key provided or user key succeeded).");
-    }
-    if (!llmResponse) {
-        const { output } = await finalInterviewFeedbackGlobalPrompt(input);
-        llmResponse = output;
-    }
-  }
+  console.log("Falling back to platform's default API key for final interview feedback.");
+  const { output } = await finalInterviewFeedbackGlobalPlatformPrompt(promptData);
+  llmResponse = output;
 
   if (!llmResponse) {
     throw new Error("The AI model did not return the expected output for final interview feedback after all attempts.");
@@ -140,7 +175,7 @@ async function generateFinalFeedbackLogic(input: FinalInterviewFeedbackInput): P
 const finalInterviewFeedbackFlow = ai.defineFlow(
   {
     name: 'finalInterviewFeedbackFlow',
-    inputSchema: FinalInterviewFeedbackInputSchema,
+    inputSchema: FinalInterviewFeedbackInputSchema, // Flow takes full input with API keys
     outputSchema: FinalInterviewFeedbackOutputSchema,
   },
   generateFinalFeedbackLogic

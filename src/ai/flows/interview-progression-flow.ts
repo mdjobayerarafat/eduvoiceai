@@ -2,7 +2,8 @@
 'use server';
 /**
  * @fileOverview Handles the progression of a mock interview, providing feedback on the user's last answer
- * and generating the next question. Can use user-provided Gemini API key, with fallback.
+ * and generating the next question.
+ * Implements a cascading API key fallback: User Gemini -> User OpenAI -> User Claude -> Platform Default.
  *
  * - getFeedbackAndNextQuestion - A function that processes the user's answer and generates feedback and the next question.
  * - InterviewProgressionInput - The input type for the getFeedbackAndNextQuestion function.
@@ -11,6 +12,8 @@
 
 import { genkit as baseGenkit } from 'genkit';
 import { googleAI } from '@genkit-ai/googleai';
+import { openai } from '@genkit-ai/openai'; // Ensure @genkit-ai/openai is installed if used
+import { anthropic } from '@genkit-ai/anthropic'; // Ensure @genkit-ai/anthropic is installed if used
 import { ai } from '@/ai/genkit'; // Global AI instance
 import { z } from 'genkit';
 
@@ -26,6 +29,8 @@ const InterviewProgressionInputSchema = z.object({
   jobDescription: z.string().describe('The job description for the role.'),
   interviewHistory: z.array(InterviewExchangeSchema).describe('A history of questions asked and answers given so far in the interview. The last item is the most recent exchange.'),
   geminiApiKey: z.string().optional().describe('Optional Google Gemini API key to use for this request.'),
+  openaiApiKey: z.string().optional().describe('Optional OpenAI API key to use for this request.'),
+  claudeApiKey: z.string().optional().describe('Optional Anthropic Claude API key to use for this request.'),
 });
 export type InterviewProgressionInput = z.infer<typeof InterviewProgressionInputSchema>;
 
@@ -35,9 +40,16 @@ const InterviewProgressionOutputSchema = z.object({
 });
 export type InterviewProgressionOutput = z.infer<typeof InterviewProgressionOutputSchema>;
 
+// Schema for the actual data passed to the prompt template
+const PromptDataTypeSchema = z.object({
+    resume: z.string(),
+    jobDescription: z.string(),
+    interviewHistory: z.array(InterviewExchangeSchema),
+});
+
 const INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE = {
   name: 'interviewProgressionPrompt',
-  input: { schema: InterviewProgressionInputSchema },
+  input: { schema: PromptDataTypeSchema }, // Actual data for the prompt template
   output: { schema: InterviewProgressionOutputSchema },
   prompt: `You are an AI Interviewer conducting a mock interview.
 The candidate's resume and the job description are provided below.
@@ -67,60 +79,85 @@ Respond with only the feedback and the next question in the specified output for
 `,
 };
 
-const interviewProgressionGlobalPrompt = ai.definePrompt(INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE);
+const interviewProgressionGlobalPlatformPrompt = ai.definePrompt(INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE);
 
 async function generateFeedbackAndNextQuestionLogic(input: InterviewProgressionInput): Promise<InterviewProgressionOutput> {
-  let llmResponse;
-  let userKeyFailed = false;
+  let llmResponse: InterviewProgressionOutput | undefined;
+  
+  // Data to be passed to the prompt template
+  const promptData: z.infer<typeof PromptDataTypeSchema> = {
+    resume: input.resume,
+    jobDescription: input.jobDescription,
+    interviewHistory: input.interviewHistory,
+  };
 
-  if (input.geminiApiKey) {
-    console.log("Attempting to use user-provided Gemini API key for interview progression.");
-    const tempAi = baseGenkit({
-      plugins: [googleAI({ apiKey: input.geminiApiKey })],
-      model: ai.getModel(),
-    });
-    const tempPrompt = tempAi.definePrompt({
-      ...INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE,
-      name: `${INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE.name}_userKeyed_${Date.now()}`,
-    });
-    try {
-      const { output } = await tempPrompt(input);
-      llmResponse = output;
-      console.log("Successfully used user-provided Gemini API key for interview progression.");
-    } catch (e: any) {
-      console.warn("Error using user-provided Gemini API key for interview progression:", e.message);
-      const errorMessage = (e.message || "").toLowerCase();
-      const errorStatus = e.status || e.code;
-      const errorType = (e.type || "").toLowerCase();
-      if (
-        errorMessage.includes("api key") ||
-        errorMessage.includes("permission denied") ||
-        errorMessage.includes("quota exceeded") ||
-        errorMessage.includes("authentication failed") ||
-        errorMessage.includes("invalid_request") ||
-        errorType.includes("api_key") ||
-        errorStatus === 401 || errorStatus === 403 || errorStatus === 429 ||
-        (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7)
-      ) {
-        userKeyFailed = true;
-        console.log("User's API key failed for interview progression. Attempting fallback to platform key.");
-      } else {
-        throw e;
+  const attempts = [
+    {
+      providerName: 'Gemini',
+      apiKey: input.geminiApiKey,
+      plugin: googleAI,
+      modelName: 'googleai/gemini-2.0-flash',
+    },
+    {
+      providerName: 'OpenAI',
+      apiKey: input.openaiApiKey,
+      plugin: openai,
+      modelName: 'openai/gpt-4o-mini',
+    },
+    {
+      providerName: 'Claude',
+      apiKey: input.claudeApiKey,
+      plugin: anthropic,
+      modelName: 'anthropic/claude-3-haiku-20240307',
+    },
+  ];
+
+  for (const attempt of attempts) {
+    if (attempt.apiKey && attempt.plugin) {
+      console.log(`Attempting to use user-provided ${attempt.providerName} API key for interview progression.`);
+      try {
+        const tempAi = baseGenkit({
+          plugins: [attempt.plugin({ apiKey: attempt.apiKey })],
+        });
+        const tempPrompt = tempAi.definePrompt({
+          ...INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE,
+          name: `${INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
+          config: { model: attempt.modelName },
+        });
+
+        const { output } = await tempPrompt(promptData);
+        llmResponse = output;
+        if (!llmResponse) throw new Error(`Model (${attempt.providerName}) returned no output.`);
+        
+        console.log(`Successfully used user-provided ${attempt.providerName} API key for interview progression.`);
+        return llmResponse;
+      } catch (e: any) {
+        console.warn(`Error using user-provided ${attempt.providerName} API key for interview progression:`, e.message);
+        const errorMessage = (e.message || "").toLowerCase();
+        const errorStatus = e.status || e.code;
+        const errorType = (e.type || "").toLowerCase();
+        const isKeyError =
+          errorMessage.includes("api key") ||
+          errorMessage.includes("permission denied") ||
+          errorMessage.includes("quota exceeded") ||
+          errorMessage.includes("authentication failed") ||
+          errorMessage.includes("invalid_request") ||
+          errorMessage.includes("billing") ||
+          errorMessage.includes("insufficient_quota") ||
+          errorType.includes("api_key") ||
+          errorStatus === 401 || errorStatus === 403 || errorStatus === 429 ||
+          (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) ||
+          (e.response && e.response.data && e.response.data.error && /api key/i.test(e.response.data.error.message));
+
+        if (!isKeyError) throw e;
+        console.log(`User's ${attempt.providerName} API key failed. Attempting next fallback.`);
       }
     }
   }
 
-  if (!input.geminiApiKey || userKeyFailed) {
-    if (userKeyFailed) {
-      console.log("Falling back to platform's default API key for interview progression.");
-    } else {
-      console.log("Using platform's default API key for interview progression (no user key provided or user key succeeded).");
-    }
-    if (!llmResponse) {
-        const { output } = await interviewProgressionGlobalPrompt(input);
-        llmResponse = output;
-    }
-  }
+  console.log("Falling back to platform's default API key for interview progression.");
+  const { output } = await interviewProgressionGlobalPlatformPrompt(promptData);
+  llmResponse = output;
 
   if (!llmResponse) {
     throw new Error("AI model did not return the expected output for interview progression after all attempts.");
@@ -131,7 +168,7 @@ async function generateFeedbackAndNextQuestionLogic(input: InterviewProgressionI
 const interviewProgressionFlow = ai.defineFlow(
   {
     name: 'interviewProgressionFlow',
-    inputSchema: InterviewProgressionInputSchema,
+    inputSchema: InterviewProgressionInputSchema, // The flow takes the full input with API keys
     outputSchema: InterviewProgressionOutputSchema,
   },
   generateFeedbackAndNextQuestionLogic

@@ -10,7 +10,7 @@ import type { TopicLectureInput, TopicLectureOutput } from "@/ai/flows/topic-lec
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Terminal, Save, AlertTriangle, Loader2 } from "lucide-react"; // Added Loader2
+import { Terminal, Save, AlertTriangle, Loader2 } from "lucide-react"; 
 import { account, databases, ID, Permission, Role, APPWRITE_DATABASE_ID, LECTURES_COLLECTION_ID } from "@/lib/appwrite";
 import { AppwriteException, Models } from "appwrite";
 import type { Lecture } from "@/types/lecture";
@@ -26,7 +26,7 @@ export default function LecturesPage() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const handleSubmitTopic = async (data: { topic: string }) => { // Modified to accept simpler data from form
+  const handleSubmitTopic = async (data: { topic: string }) => { 
     setIsGenerating(true);
     setError(null);
     setLectureOutput(null);
@@ -48,7 +48,6 @@ export default function LecturesPage() {
     }
     const userId = currentUser.$id;
 
-    // 1. Deduct tokens
     try {
       const tokenResponse = await fetch('/api/user/deduct-tokens', {
         method: 'POST',
@@ -94,34 +93,41 @@ export default function LecturesPage() {
       return;
     }
 
-    // 2. Retrieve user's Gemini API key from localStorage
     let userGeminiApiKey: string | undefined = undefined;
+    let userOpenaiApiKey: string | undefined = undefined;
+    let userClaudeApiKey: string | undefined = undefined;
     try {
       const savedKeysRaw = localStorage.getItem("eduvoice_api_keys");
       if (savedKeysRaw) {
         const savedKeys = JSON.parse(savedKeysRaw);
-        if (savedKeys.geminiApiKey) {
-          userGeminiApiKey = savedKeys.geminiApiKey;
-        }
+        userGeminiApiKey = savedKeys.geminiApiKey;
+        userOpenaiApiKey = savedKeys.openaiApiKey;
+        userClaudeApiKey = savedKeys.claudeApiKey;
       }
     } catch (e) {
       console.warn("Could not read API keys from localStorage", e);
     }
 
-    // 3. Prepare input for Genkit flow
     const lectureInput: TopicLectureInput = {
       topic: data.topic,
-      ...(userGeminiApiKey && { geminiApiKey: userGeminiApiKey }), // Add key if present
+      ...(userGeminiApiKey && { geminiApiKey: userGeminiApiKey }),
+      ...(userOpenaiApiKey && { openaiApiKey: userOpenaiApiKey }),
+      ...(userClaudeApiKey && { claudeApiKey: userClaudeApiKey }),
     };
 
-    // 4. Generate lecture if token deduction was successful
     let generatedLecture: TopicLectureOutput | null = null;
+    let attemptDetails = "";
+    if (userGeminiApiKey) attemptDetails += "(Used your Gemini key). ";
+    if (userOpenaiApiKey && !userGeminiApiKey) attemptDetails += "(Used your OpenAI key). "; // crude primary indication
+    if (userClaudeApiKey && !userGeminiApiKey && !userOpenaiApiKey) attemptDetails += "(Used your Claude key). ";
+
+
     try {
       generatedLecture = await generateTopicLecture(lectureInput);
       setLectureOutput(generatedLecture);
       toast({
         title: "Lecture Generated!",
-        description: `Your lecture on "${data.topic}" is ready. You can now save it.`,
+        description: `Your lecture on "${data.topic}" is ready. ${attemptDetails}You can now save it.`,
       });
     } catch (err) {
       console.error("Error generating lecture:", err);
@@ -129,7 +135,7 @@ export default function LecturesPage() {
       setError(`Failed to generate lecture: ${errorMessage}`);
       toast({
         title: "Generation Failed",
-        description: `Could not generate lecture for "${data.topic}". Please try again. ${userGeminiApiKey ? "(Used your API key)" : ""}`,
+        description: `Could not generate lecture for "${data.topic}". ${attemptDetails}Please try again.`,
         variant: "destructive",
       });
     } finally {
