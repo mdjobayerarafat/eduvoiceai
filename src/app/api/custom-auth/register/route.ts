@@ -6,14 +6,13 @@ import {
   initializationError,
   APPWRITE_DATABASE_ID,
   USERS_COLLECTION_ID,
-  Query, // Now imported from appwrite.node
-  AppwriteException // Now imported from appwrite.node
+  Query,
+  AppwriteException
 } from '@/lib/appwrite.node';
 
 const INITIAL_FREE_TOKENS = 60000;
 
 export async function POST(request: Request) {
-  // Top-level try-catch for very unexpected errors or issues with NextResponse
   try {
     console.log("API Route (Register): /api/custom-auth/register POST request received.");
 
@@ -51,10 +50,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Username must be at least 3 characters.' }, { status: 400 });
     }
 
-    // Main logic try-catch
     try {
       console.log(`API Route (Register): Checking for existing user in custom DB (${USERS_COLLECTION_ID}) with email: ${email}`);
-      const existingUsers = await databases.listDocuments( // Use 'databases'
+      const existingUsers = await databases.listDocuments(
         APPWRITE_DATABASE_ID!,
         USERS_COLLECTION_ID!,
         [Query.equal('email', email), Query.limit(1)]
@@ -71,11 +69,25 @@ export async function POST(request: Request) {
         username: username,
         passwordHash: password, // INSECURE: Storing plaintext password for demo. Replace with hashed password in production.
         token_balance: INITIAL_FREE_TOKENS,
-        subscription_status: 'free_tier', 
+        subscription_status: 'free_tier',
+        // Ensure your 'users' collection schema in Appwrite includes:
+        // email (String, Required, Indexed, Unique if possible)
+        // username (String, Required)
+        // passwordHash (String, Required) - For securely hashed passwords
+        // token_balance (Integer, Required, Default: 60000)
+        // subscription_status (String, Optional, e.g., "free_tier", "active_pro")
+        // Other fields from your User Collection schema can be initialized here if needed:
+        // subscription_end_date: null,
+        // voucher_code: null,
+        // voucher_expiry_date: null,
+        // voucher_usage_count: 0,
+        // firstName: '',
+        // lastName: '',
+        // profileImageStorageId: null,
       };
 
       console.log(`API Route (Register): Creating document in custom DB (${USERS_COLLECTION_ID}).`);
-      const newUserDocument = await databases.createDocument( // Use 'databases'
+      const newUserDocument = await databases.createDocument(
         APPWRITE_DATABASE_ID!,
         USERS_COLLECTION_ID!,
         'unique()', 
@@ -90,37 +102,35 @@ export async function POST(request: Request) {
       let safeErrorMessage = "An internal server error occurred during registration.";
       let statusCode = 500;
       
-      // Log the original error for server-side debugging
       console.error('API Route Error (Register): Error during custom registration logic. Original error: ', error);
 
       if (error instanceof AppwriteException) {
         safeErrorMessage = `Appwrite Error (${error.code || 'N/A'}): ${error.message}`;
         statusCode = typeof error.code === 'number' && error.code >= 400 && error.code < 600 ? error.code : 500;
-         if (error.code === 409 && error.type === 'document_already_exists') { // Or similar for unique constraints
+         if (error.code === 409 && error.type === 'document_already_exists') { 
             safeErrorMessage = "A user with this email or username might already exist.";
         }
       } else if (error instanceof Error && error.message) {
-        // For generic errors, only use the message if it's known to be safe or simple
+        // For generic errors, avoid sending potentially sensitive details to client.
         safeErrorMessage = "An unexpected error occurred processing your registration.";
       } else if (typeof error === 'string') {
-        safeErrorMessage = error; // Should be rare
+        safeErrorMessage = error; 
       }
       
       return NextResponse.json({ message: safeErrorMessage }, { status: statusCode });
     }
   } catch (topLevelError: any) {
     let safeTopLevelMessage = "A critical server error occurred in the registration API.";
-     // Log the original error for server-side debugging
     console.error('API Route CRITICAL Error (Register): Unhandled exception. Original error: ', topLevelError);
+     let details = '';
+     if (topLevelError instanceof Error) {
+        details = topLevelError.message;
+     } else if (typeof topLevelError === 'string') {
+        details = topLevelError;
+     }
 
-    if (topLevelError instanceof Error && topLevelError.message) {
-      safeTopLevelMessage = `Critical error: An unexpected issue occurred.`;
-    } else if (typeof topLevelError === 'string') {
-      safeTopLevelMessage = `Critical error: An unexpected issue occurred. Details: ${topLevelError}`;
-    }
-    
     return NextResponse.json(
-        { message: safeTopLevelMessage },
+        { message: `Critical error: An unexpected server issue occurred. ${details}`.trim() },
         { status: 500 } 
     );
   }

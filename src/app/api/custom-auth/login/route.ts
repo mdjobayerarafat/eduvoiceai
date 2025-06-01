@@ -6,8 +6,8 @@ import {
   initializationError,
   APPWRITE_DATABASE_ID,
   USERS_COLLECTION_ID,
-  Query, // Now imported from appwrite.node
-  AppwriteException // Now imported from appwrite.node
+  Query,
+  AppwriteException
 } from '@/lib/appwrite.node';
 
 export async function POST(request: Request) {
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
 
     try {
       console.log(`API Route (Login): Searching for user in custom DB (${USERS_COLLECTION_ID}) with email: ${email}`);
-      const usersList = await databases.listDocuments( // Use 'databases'
+      const usersList = await databases.listDocuments(
         APPWRITE_DATABASE_ID!,
         USERS_COLLECTION_ID!,
         [Query.equal('email', email), Query.limit(1)]
@@ -60,12 +60,20 @@ export async function POST(request: Request) {
       console.log(`API Route (Login): User found. Verifying password for user ID: ${userDocument.$id}`);
 
       // WARNING: Comparing plaintext passwords. Highly insecure. For demonstration only.
+      // In a real application, you would:
+      // 1. Hash the incoming password using the same algorithm and salt (if applicable) as used during registration.
+      // 2. Compare the generated hash with the stored passwordHash.
       if (userDocument.passwordHash !== password) {
         console.log(`API Route (Login): Password mismatch for user ID: ${userDocument.$id}.`);
         return NextResponse.json({ message: 'Invalid email or password.' }, { status: 401 });
       }
 
       console.log(`API Route (Login): Login successful for user ID: ${userDocument.$id}.`);
+      // IMPORTANT: Session management is NOT implemented here.
+      // This route only verifies credentials against the custom DB.
+      // A real login would create a session (e.g., JWT) and return it.
+
+      // Exclude passwordHash from the response for security.
       const { passwordHash: _, ...userResponseData } = userDocument;
 
       return NextResponse.json({ message: 'Login successful (custom DB). Session not implemented.', user: userResponseData }, { status: 200 });
