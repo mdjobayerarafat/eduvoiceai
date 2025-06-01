@@ -4,7 +4,7 @@
 /**
  * @fileOverview Simulates a mock interview with an AI interviewer.
  * This flow generates the first question for a mock interview.
- * Implements a cascading API key fallback: User Gemini -> User OpenAI -> User Claude -> Platform Default.
+ * Implements a cascading API key fallback: User Gemini -> Platform Default.
  *
  * - getFirstInterviewQuestion - A function that generates the first interview question.
  * - InterviewConfigInput - The input type for generating the question (resume, job description, optional API keys).
@@ -13,8 +13,7 @@
 
 import { genkit as baseGenkit } from 'genkit';
 import { googleAI } from '@genkit-ai/googleai';
-import { openai } from '@genkit-ai/openai'; // Ensure @genkit-ai/openai is installed if used
-import { anthropic } from '@genkit-ai/anthropic'; // Ensure @genkit-ai/anthropic is installed if used
+// import { openai } from '@genkit-ai/openai'; // @genkit-ai/openai not found, removing usage
 import { ai } from '@/ai/genkit'; // Global AI instance
 import { z } from 'genkit';
 
@@ -24,8 +23,8 @@ const InterviewConfigInputSchema = z.object({
     .describe('The resume of the candidate, as a data URI that must include a MIME type and use Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.'),
   jobDescription: z.string().describe('The job description for the role the candidate is interviewing for.'),
   geminiApiKey: z.string().optional().describe('Optional Google Gemini API key to use for this request.'),
-  openaiApiKey: z.string().optional().describe('Optional OpenAI API key to use for this request.'),
-  claudeApiKey: z.string().optional().describe('Optional Anthropic Claude API key to use for this request.'),
+  openaiApiKey: z.string().optional().describe('Optional OpenAI API key to use for this request (currently not supported by this flow).'),
+  claudeApiKey: z.string().optional().describe('Optional Anthropic Claude API key to use for this request (currently not supported).'),
 });
 export type InterviewConfigInput = z.infer<typeof InterviewConfigInputSchema>;
 
@@ -34,9 +33,15 @@ const FirstQuestionOutputSchema = z.object({
 });
 export type FirstQuestionOutput = z.infer<typeof FirstQuestionOutputSchema>;
 
+// Schema for the actual data passed to the prompt template
+const PromptDataTypeSchema = z.object({
+    resume: z.string(),
+    jobDescription: z.string(),
+});
+
 const FIRST_QUESTION_PROMPT_CONFIG_BASE = {
   name: 'firstQuestionPrompt',
-  input: { schema: InterviewConfigInputSchema }, // This is for the flow, prompt will take subset
+  input: { schema: PromptDataTypeSchema }, 
   output: { schema: FirstQuestionOutputSchema },
   prompt: `You are an AI Interviewer.
 Based on the candidate's resume and the provided job description, your task is to:
@@ -57,8 +62,7 @@ const firstQuestionGlobalPlatformPrompt = ai.definePrompt(FIRST_QUESTION_PROMPT_
 
 async function generateFirstQuestionLogic(input: InterviewConfigInput): Promise<FirstQuestionOutput> {
   let llmResponse: FirstQuestionOutput | undefined;
-
-  const promptInput = { resume: input.resume, jobDescription: input.jobDescription };
+  const promptData: z.infer<typeof PromptDataTypeSchema> = { resume: input.resume, jobDescription: input.jobDescription };
 
   const attempts = [
     {
@@ -67,18 +71,12 @@ async function generateFirstQuestionLogic(input: InterviewConfigInput): Promise<
       plugin: googleAI,
       modelName: 'googleai/gemini-2.0-flash',
     },
-    {
-      providerName: 'OpenAI',
-      apiKey: input.openaiApiKey,
-      plugin: openai,
-      modelName: 'openai/gpt-4o-mini',
-    },
-    {
-      providerName: 'Claude',
-      apiKey: input.claudeApiKey,
-      plugin: anthropic,
-      modelName: 'anthropic/claude-3-haiku-20240307',
-    },
+    // { // Removing OpenAI attempt as @genkit-ai/openai is not available
+    //   providerName: 'OpenAI',
+    //   apiKey: input.openaiApiKey,
+    //   plugin: openai,
+    //   modelName: 'openai/gpt-4o-mini',
+    // },
   ];
 
   for (const attempt of attempts) {
@@ -90,12 +88,11 @@ async function generateFirstQuestionLogic(input: InterviewConfigInput): Promise<
         });
         const tempPrompt = tempAi.definePrompt({
           ...FIRST_QUESTION_PROMPT_CONFIG_BASE,
-          input: { schema: z.object({ resume: z.string(), jobDescription: z.string() }) }, // Refine for actual prompt
           name: `${FIRST_QUESTION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
           config: { model: attempt.modelName },
         });
 
-        const { output } = await tempPrompt(promptInput);
+        const { output } = await tempPrompt(promptData);
         llmResponse = output;
         if (!llmResponse) throw new Error(`Model (${attempt.providerName}) returned no output.`);
 
@@ -126,7 +123,7 @@ async function generateFirstQuestionLogic(input: InterviewConfigInput): Promise<
   }
 
   console.log("Falling back to platform's default API key for first interview question.");
-  const { output } = await firstQuestionGlobalPlatformPrompt(promptInput);
+  const { output } = await firstQuestionGlobalPlatformPrompt(promptData);
   llmResponse = output;
 
   if (!llmResponse) {

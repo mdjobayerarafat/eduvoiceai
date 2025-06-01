@@ -1,11 +1,10 @@
-
 // topic-lecture-flow.ts
 'use server';
 
 /**
  * @fileOverview Generates a lecture on a given topic, including summaries,
  * explanations, and relevant YouTube videos.
- * Implements a cascading API key fallback: User Gemini -> User OpenAI -> User Claude -> Platform Default.
+ * Implements a cascading API key fallback: User Gemini -> Platform Default.
  *
  * - generateTopicLecture - A function that generates a lecture on a given topic.
  * - TopicLectureInput - The input type for the generateTopicLecture function.
@@ -14,16 +13,15 @@
 
 import { genkit as baseGenkit } from 'genkit';
 import { googleAI } from '@genkit-ai/googleai';
-import { openai } from '@genkit-ai/openai'; // Ensure @genkit-ai/openai is installed if used
-import { anthropic } from '@genkit-ai/anthropic'; // Ensure @genkit-ai/anthropic is installed if used
+// import { openai } from '@genkit-ai/openai'; // @genkit-ai/openai not found, removing usage
 import { ai } from '@/ai/genkit'; // Global AI instance
 import { z } from 'genkit';
 
 const TopicLectureInputSchema = z.object({
   topic: z.string().describe('The topic for the lecture.'),
   geminiApiKey: z.string().optional().describe('Optional Google Gemini API key to use for this request.'),
-  openaiApiKey: z.string().optional().describe('Optional OpenAI API key to use for this request.'),
-  claudeApiKey: z.string().optional().describe('Optional Anthropic Claude API key to use for this request.'),
+  openaiApiKey: z.string().optional().describe('Optional OpenAI API key to use for this request (currently not supported by this flow).'),
+  claudeApiKey: z.string().optional().describe('Optional Anthropic Claude API key to use for this request (currently not supported).'),
 });
 export type TopicLectureInput = z.infer<typeof TopicLectureInputSchema>;
 
@@ -34,9 +32,15 @@ const TopicLectureOutputSchema = z.object({
 });
 export type TopicLectureOutput = z.infer<typeof TopicLectureOutputSchema>;
 
+// Schema for the actual data passed to the prompt template
+const PromptDataTypeSchema = z.object({
+    topic: z.string(),
+});
+
+
 const LECTURE_PROMPT_CONFIG_BASE = {
   name: 'topicLecturePrompt',
-  input: { schema: TopicLectureInputSchema }, // Input schema used for type checking, actual input to prompt may vary based on provider
+  input: { schema: PromptDataTypeSchema }, 
   output: { schema: TopicLectureOutputSchema },
   prompt: `You are an AI assistant designed to generate lectures on various topics.
 
@@ -50,35 +54,27 @@ const LECTURE_PROMPT_CONFIG_BASE = {
   Please ensure the lecture is informative, engaging, and easy to understand.
   Output the lecture content, summary, and YouTube video links in a structured format.
   `,
-  // config: {
-  //   // safetySettings can be defined here if needed universally, or per-provider
-  // }
 };
 
 const topicLectureGlobalPlatformPrompt = ai.definePrompt(LECTURE_PROMPT_CONFIG_BASE);
 
 async function generateLectureLogic(input: TopicLectureInput): Promise<TopicLectureOutput> {
   let llmResponse: TopicLectureOutput | undefined;
+  const promptData: z.infer<typeof PromptDataTypeSchema> = { topic: input.topic };
 
   const attempts = [
     {
       providerName: 'Gemini',
       apiKey: input.geminiApiKey,
       plugin: googleAI,
-      modelName: 'googleai/gemini-2.0-flash', // Default model for this provider
+      modelName: 'googleai/gemini-2.0-flash',
     },
-    {
-      providerName: 'OpenAI',
-      apiKey: input.openaiApiKey,
-      plugin: openai, // Make sure @genkit-ai/openai is installed
-      modelName: 'openai/gpt-4o-mini', // Example, ensure this model is available and suitable
-    },
-    {
-      providerName: 'Claude',
-      apiKey: input.claudeApiKey,
-      plugin: anthropic, // Make sure @genkit-ai/anthropic is installed
-      modelName: 'anthropic/claude-3-haiku-20240307', // Example, ensure this model is available
-    },
+    // { // Removing OpenAI attempt as @genkit-ai/openai is not available
+    //   providerName: 'OpenAI',
+    //   apiKey: input.openaiApiKey,
+    //   plugin: openai, 
+    //   modelName: 'openai/gpt-4o-mini', 
+    // },
   ];
 
   for (const attempt of attempts) {
@@ -90,48 +86,46 @@ async function generateLectureLogic(input: TopicLectureInput): Promise<TopicLect
         });
         const tempPrompt = tempAi.definePrompt({
           ...LECTURE_PROMPT_CONFIG_BASE,
-          name: `${LECTURE_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
-          config: {
-            model: attempt.modelName,
-            // safetySettings specific to this provider could be added here
-          },
+          name: `${LECTURE_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`, // Unique name for temp prompt
+          config: { model: attempt.modelName },
         });
 
-        const { output } = await tempPrompt({ topic: input.topic }); // Pass only relevant fields for the prompt
+        const { output } = await tempPrompt(promptData);
         llmResponse = output;
         if (!llmResponse) throw new Error(`Model (${attempt.providerName}) returned no output.`);
         
         console.log(`Successfully used user-provided ${attempt.providerName} API key for lecture generation.`);
-        return llmResponse; // Success, return immediately
+        return llmResponse; 
       } catch (e: any) {
         console.warn(`Error using user-provided ${attempt.providerName} API key for lecture:`, e.message);
         const errorMessage = (e.message || "").toLowerCase();
-        const errorStatus = e.status || e.code;
-        const errorType = (e.type || "").toLowerCase();
+        const errorStatus = e.status || e.code; // Gemini uses `code` (e.g., 7 for permission denied)
+        const errorType = (e.type || "").toLowerCase(); // OpenAI uses `type`
         const isKeyError =
           errorMessage.includes("api key") ||
           errorMessage.includes("permission denied") ||
           errorMessage.includes("quota exceeded") ||
           errorMessage.includes("authentication failed") ||
-          errorMessage.includes("invalid_request") ||
-          errorMessage.includes("billing") ||
-          errorMessage.includes("insufficient_quota") ||
-          errorType.includes("api_key") ||
-          errorStatus === 401 || errorStatus === 403 || errorStatus === 429 ||
-          (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) ||
-          (e.response && e.response.data && e.response.data.error && /api key/i.test(e.response.data.error.message));
+          errorMessage.includes("invalid_request") || // For some key-related issues on OpenAI
+          errorMessage.includes("billing") || // For some key-related issues on OpenAI
+          errorMessage.includes("insufficient_quota") || // For OpenAI
+          errorType.includes("api_key") || // Generic
+          errorStatus === 401 || errorStatus === 403 || errorStatus === 429 || // Standard HTTP codes
+          (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) || // For Gemini key errors specifically
+          (e.response && e.response.data && e.response.data.error && /api key/i.test(e.response.data.error.message)); // Check response body if available
 
         if (!isKeyError) {
-          throw e; // Non-key related error, re-throw
+          throw e; // Not a key-related error, re-throw
         }
+        // Log the key-related error and continue to the next attempt or fallback.
         console.log(`User's ${attempt.providerName} API key failed due to key-related issue. Attempting next fallback.`);
       }
     }
   }
 
-  // Fallback to platform's default key
+  // Fallback to platform's default key if user keys are not provided or fail
   console.log("Falling back to platform's default API key for lecture generation.");
-  const { output } = await topicLectureGlobalPlatformPrompt({ topic: input.topic });
+  const { output } = await topicLectureGlobalPlatformPrompt(promptData);
   llmResponse = output;
 
   if (!llmResponse) {

@@ -3,7 +3,7 @@
 /**
  * @fileOverview Handles the progression of a mock interview, providing feedback on the user's last answer
  * and generating the next question.
- * Implements a cascading API key fallback: User Gemini -> User OpenAI -> User Claude -> Platform Default.
+ * Implements a cascading API key fallback: User Gemini -> Platform Default.
  *
  * - getFeedbackAndNextQuestion - A function that processes the user's answer and generates feedback and the next question.
  * - InterviewProgressionInput - The input type for the getFeedbackAndNextQuestion function.
@@ -12,8 +12,7 @@
 
 import { genkit as baseGenkit } from 'genkit';
 import { googleAI } from '@genkit-ai/googleai';
-import { openai } from '@genkit-ai/openai'; // Ensure @genkit-ai/openai is installed if used
-import { anthropic } from '@genkit-ai/anthropic'; // Ensure @genkit-ai/anthropic is installed if used
+// import { openai } from '@genkit-ai/openai'; // @genkit-ai/openai not found, removing usage
 import { ai } from '@/ai/genkit'; // Global AI instance
 import { z } from 'genkit';
 
@@ -29,8 +28,8 @@ const InterviewProgressionInputSchema = z.object({
   jobDescription: z.string().describe('The job description for the role.'),
   interviewHistory: z.array(InterviewExchangeSchema).describe('A history of questions asked and answers given so far in the interview. The last item is the most recent exchange.'),
   geminiApiKey: z.string().optional().describe('Optional Google Gemini API key to use for this request.'),
-  openaiApiKey: z.string().optional().describe('Optional OpenAI API key to use for this request.'),
-  claudeApiKey: z.string().optional().describe('Optional Anthropic Claude API key to use for this request.'),
+  openaiApiKey: z.string().optional().describe('Optional OpenAI API key to use for this request (currently not supported by this flow).'),
+  claudeApiKey: z.string().optional().describe('Optional Anthropic Claude API key to use for this request (currently not supported).'),
 });
 export type InterviewProgressionInput = z.infer<typeof InterviewProgressionInputSchema>;
 
@@ -49,7 +48,7 @@ const PromptDataTypeSchema = z.object({
 
 const INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE = {
   name: 'interviewProgressionPrompt',
-  input: { schema: PromptDataTypeSchema }, // Actual data for the prompt template
+  input: { schema: PromptDataTypeSchema }, 
   output: { schema: InterviewProgressionOutputSchema },
   prompt: `You are an AI Interviewer conducting a mock interview.
 The candidate's resume and the job description are provided below.
@@ -83,8 +82,6 @@ const interviewProgressionGlobalPlatformPrompt = ai.definePrompt(INTERVIEW_PROGR
 
 async function generateFeedbackAndNextQuestionLogic(input: InterviewProgressionInput): Promise<InterviewProgressionOutput> {
   let llmResponse: InterviewProgressionOutput | undefined;
-  
-  // Data to be passed to the prompt template
   const promptData: z.infer<typeof PromptDataTypeSchema> = {
     resume: input.resume,
     jobDescription: input.jobDescription,
@@ -98,18 +95,12 @@ async function generateFeedbackAndNextQuestionLogic(input: InterviewProgressionI
       plugin: googleAI,
       modelName: 'googleai/gemini-2.0-flash',
     },
-    {
-      providerName: 'OpenAI',
-      apiKey: input.openaiApiKey,
-      plugin: openai,
-      modelName: 'openai/gpt-4o-mini',
-    },
-    {
-      providerName: 'Claude',
-      apiKey: input.claudeApiKey,
-      plugin: anthropic,
-      modelName: 'anthropic/claude-3-haiku-20240307',
-    },
+    // { // Removing OpenAI attempt as @genkit-ai/openai is not available
+    //   providerName: 'OpenAI',
+    //   apiKey: input.openaiApiKey,
+    //   plugin: openai,
+    //   modelName: 'openai/gpt-4o-mini',
+    // },
   ];
 
   for (const attempt of attempts) {
@@ -168,7 +159,7 @@ async function generateFeedbackAndNextQuestionLogic(input: InterviewProgressionI
 const interviewProgressionFlow = ai.defineFlow(
   {
     name: 'interviewProgressionFlow',
-    inputSchema: InterviewProgressionInputSchema, // The flow takes the full input with API keys
+    inputSchema: InterviewProgressionInputSchema, 
     outputSchema: InterviewProgressionOutputSchema,
   },
   generateFeedbackAndNextQuestionLogic
