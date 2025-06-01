@@ -59,52 +59,49 @@ export async function GET(request: NextRequest) {
   console.log(`API Route /confirm-success: DIAGNOSTIC - userId length: ${userId.length}`);
   console.log(`API Route /confirm-success: DIAGNOSTIC - userId starts with underscore?: ${userId.startsWith('_')}`);
   // Basic regex for typical Appwrite ID: Alphanumeric, up to 36 chars.
-  // Document IDs can also have '.', '_', '-' but user IDs are typically simpler.
-  // The error message is the true validator.
   console.log(`API Route /confirm-success: DIAGNOSTIC - userId basic Appwrite ID pattern test (a-zA-Z0-9): ${/^[a-zA-Z0-9]{1,36}$/.test(userId)}`);
+
+  // Pre-emptive checks based on Appwrite's error message before calling Appwrite
+  if (userId.length > 36) {
+      const errMsg = `userId "${userId}" is longer than 36 characters.`;
+      console.error(`API Route /confirm-success Error: ${errMsg}`);
+      return NextResponse.redirect(new URL(`/payment/cancel?error=invalid_user_id_length&details=${encodeURIComponent(errMsg)}`, request.url));
+  }
+  if (userId.startsWith('_')) {
+      const errMsg = `userId "${userId}" starts with an underscore, which is invalid for Appwrite document IDs.`;
+      console.error(`API Route /confirm-success Error: ${errMsg}`);
+       return NextResponse.redirect(new URL(`/payment/cancel?error=invalid_user_id_format_underscore&details=${encodeURIComponent(errMsg)}`, request.url));
+  }
+  // Stricter check for Appwrite UID characters (a-z, A-Z, 0-9, underscore only)
+  if (!/^[a-zA-Z0-9_]{1,36}$/.test(userId)) {
+      const errMsg = `userId "${userId}" contains invalid characters for an Appwrite UID. Valid chars are a-z, A-Z, 0-9, and underscore. Max 36 chars. Cannot start with an underscore. Full URL was: ${request.url}`;
+      console.error(`API Route /confirm-success Error: ${errMsg}`);
+      return NextResponse.redirect(new URL(`/payment/cancel?error=invalid_user_id_pattern&details=${encodeURIComponent(errMsg)}`, request.url));
+  }
+
 
   try {
     let userProfileDoc: UserProfileDocument;
     try {
       console.log(`API Route /confirm-success: Attempting to fetch Appwrite user document for userId: "${userId}" using DB ID: ${APPWRITE_DATABASE_ID} and Collection ID: ${USERS_COLLECTION_ID}`);
-      
-      // Pre-emptive check based on common Appwrite ID rules before calling Appwrite
-      if (userId.length > 36) {
-          const errMsg = `userId "${userId}" is longer than 36 characters.`;
-          console.error(`API Route /confirm-success Error: ${errMsg}`);
-          return NextResponse.redirect(new URL(`/payment/cancel?error=invalid_user_id_length&details=${encodeURIComponent(errMsg)}`, request.url));
-      }
-      if (userId.startsWith('_')) {
-          const errMsg = `userId "${userId}" starts with an underscore, which is invalid for Appwrite document IDs.`;
-          console.error(`API Route /confirm-success Error: ${errMsg}`);
-           return NextResponse.redirect(new URL(`/payment/cancel?error=invalid_user_id_format_underscore&details=${encodeURIComponent(errMsg)}`, request.url));
-      }
-      // Check for characters not allowed: Appwrite error mentioned a-z, A-Z, 0-9, and underscore.
-      // More general document IDs can have '.', '-' but User IDs (often used as doc IDs) might be stricter.
-      // Let's be a bit more permissive here and rely on Appwrite's error, but log a warning.
-      if (!/^[a-zA-Z0-9_.-]{1,36}$/.test(userId)) {
-          console.warn(`API Route /confirm-success: Warning - userId "${userId}" contains characters that might be problematic or doesn't match common Appwrite ID patterns (alphanumeric, underscore, period, hyphen, 1-36 chars).`);
-      }
-
-
       userProfileDoc = await databases.getDocument(APPWRITE_DATABASE_ID, USERS_COLLECTION_ID, userId) as UserProfileDocument;
       console.log(`API Route /confirm-success: Successfully fetched Appwrite user document for userId: ${userId}`);
     } catch (fetchError: any) {
+      let errorReason = 'fetch_user_failed';
+      let errorDetails = fetchError.message;
       if (fetchError instanceof AppwriteException) {
         console.error(`API Route /confirm-success Error: AppwriteException fetching user profile for userId "${userId}": Code ${fetchError.code}, Type ${fetchError.type}, Message: ${fetchError.message}`);
         if (fetchError.code === 404) {
-          return NextResponse.redirect(new URL(`/payment/cancel?error=user_not_found&userId=${encodeURIComponent(userId)}`, request.url));
-        }
-         // If it's an invalid document ID error, catch it here specifically
-        if (fetchError.message.toLowerCase().includes("invalid `documentid` param") || 
+          errorReason = 'user_not_found';
+        } else if (fetchError.message.toLowerCase().includes("invalid `documentid` param") || 
             fetchError.message.toLowerCase().includes("uid must contain at most 36 chars") ||
             fetchError.code === 400 && (fetchError.type === 'general_argument_invalid' || fetchError.type?.includes('document_id'))) {
-             return NextResponse.redirect(new URL(`/payment/cancel?error=invalid_appwrite_document_id&details=${encodeURIComponent(fetchError.message)}`, request.url));
+             errorReason = 'invalid_appwrite_document_id';
         }
       } else {
         console.error(`API Route /confirm-success Error: Non-AppwriteException fetching user profile for userId ${userId}:`, fetchError);
       }
-      return NextResponse.redirect(new URL(`/payment/cancel?error=fetch_user_failed&details=${encodeURIComponent(fetchError.message)}`, request.url));
+      return NextResponse.redirect(new URL(`/payment/cancel?error=${errorReason}&details=${encodeURIComponent(errorDetails)}`, request.url));
     }
 
     const currentTokenBalance = userProfileDoc.token_balance ?? 0;
