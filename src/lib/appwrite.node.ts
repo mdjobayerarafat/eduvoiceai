@@ -55,6 +55,8 @@ export const INTERVIEWS_COLLECTION_ID = "683b4b0300073d4d422d"; // interview_rep
 export const VOUCHERS_COLLECTION_ID = "683b7afb0005412f9f72";
 export const TRANSACTIONS_COLLECTION_ID = "683c0ac00011de2eaee0";
 export const USERS_COLLECTION_ID = "683c09550030dd652653"; // Your custom users collection
+export const QA_REPORTS_COLLECTION_ID = "683c8de60036a02e5a17"; // Added by user
+
 export const PROFILE_IMAGES_BUCKET_ID = process.env.NEXT_PUBLIC_APPWRITE_PROFILE_IMAGES_BUCKET_ID!;
 
 if (!APPWRITE_DATABASE_ID) {
@@ -62,4 +64,7 @@ if (!APPWRITE_DATABASE_ID) {
 }
 if (!USERS_COLLECTION_ID) { // Though hardcoded, a sanity check
     console.error("CRITICAL from appwrite.node.ts: USERS_COLLECTION_ID is not defined. Custom user operations will fail.");
+}
+if (!QA_REPORTS_COLLECTION_ID) {
+    console.error("CRITICAL from appwrite.node.ts: QA_REPORTS_COLLECTION_ID is not defined. Q&A Prep operations will fail.");
 }

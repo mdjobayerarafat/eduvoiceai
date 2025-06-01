@@ -28,7 +28,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, HelpCircle, Sparkles, FileText, ListOrdered } from "lucide-react";
-import { account } from "@/lib/appwrite";
+import { account, APPWRITE_DATABASE_ID, QA_REPORTS_COLLECTION_ID } from "@/lib/appwrite";
 import type { Models } from "appwrite";
 import { generateQuizQuestions } from "@/ai/flows/quiz-generation-flow";
 import type { QuizGenerationInput, QuizGenerationOutput } from "@/ai/flows/quiz-generation-flow";
@@ -90,7 +90,7 @@ export default function QAPrepPage() {
     setCurrentPdfName(null);
     setCurrentNumQuestions(null);
 
-    let userId: string; // Declare userId here
+    let userId: string; 
 
     try {
       const currentUser = await account.get();
@@ -99,7 +99,7 @@ export default function QAPrepPage() {
         setIsLoading(false);
         return;
       }
-      userId = currentUser.$id; // Assign userId
+      userId = currentUser.$id; 
     } catch (authError) {
       toast({ title: "Authentication Error", description: "Could not verify user. Please log in again.", variant: "destructive" });
       setIsLoading(false);
@@ -117,7 +117,7 @@ export default function QAPrepPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId, // Use userId
+          userId, 
           amountToDeduct: tokenCost,
           description: `Q&A Prep Quiz Generation: ${pdfFile.name} (${values.numQuestions} questions)`
         }),
@@ -320,13 +320,15 @@ export default function QAPrepPage() {
       <Card className="mt-6 bg-secondary/30 border-secondary">
         <CardHeader>
             <CardTitle className="font-headline text-xl flex items-center">
-                <FileText className="mr-2 h-5 w-5 text-primary" /> Appwrite Database: `quiz_reports` Collection
+                <FileText className="mr-2 h-5 w-5 text-primary" /> Appwrite Database for Quiz Reports
             </CardTitle>
+            <CardDescription>
+              Collection Name: <strong>qa_reports</strong> (ID: <strong>{QA_REPORTS_COLLECTION_ID || "683c8de60036a02e5a17"}</strong>)
+            </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
-            <p>For future development, you'll need to create a collection in Appwrite to store quiz results. Here's a suggested schema:</p>
+            <p>For future development, use the <strong>qa_reports</strong> collection (ID: <strong>{QA_REPORTS_COLLECTION_ID || "683c8de60036a02e5a17"}</strong>) in your Appwrite database (ID: <strong>{APPWRITE_DATABASE_ID || "YOUR_DB_ID"}</strong>) to store quiz results. Here's a suggested schema:</p>
             <ul className="list-disc pl-5 space-y-1 text-xs">
-                <li>**Collection Name:** `quiz_reports` (or similar)</li>
                 <li>**Attributes:**
                     <ul>
                         <li>`userId` (String, Size: 36, Required)</li>
@@ -352,3 +354,4 @@ export default function QAPrepPage() {
     </div>
   );
 }
+

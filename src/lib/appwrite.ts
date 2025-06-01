@@ -63,6 +63,7 @@ export const INTERVIEWS_COLLECTION_ID = "683b4b0300073d4d422d";
 export const VOUCHERS_COLLECTION_ID = "683b7afb0005412f9f72";
 export const TRANSACTIONS_COLLECTION_ID = "683c0ac00011de2eaee0";
 export const USERS_COLLECTION_ID = "683c09550030dd652653"; // Your custom users collection
+export const QA_REPORTS_COLLECTION_ID = "683c8de60036a02e5a17"; // Added by user
 
 export const PROFILE_IMAGES_BUCKET_ID = process.env.NEXT_PUBLIC_APPWRITE_PROFILE_IMAGES_BUCKET_ID!;
 
@@ -74,7 +75,7 @@ if (typeof PROFILE_IMAGES_BUCKET_ID !== 'string' || PROFILE_IMAGES_BUCKET_ID.tri
 }
 
 // Ensuring core collection IDs are valid before certain operations
-if (!LECTURES_COLLECTION_ID || !INTERVIEWS_COLLECTION_ID || !VOUCHERS_COLLECTION_ID || !TRANSACTIONS_COLLECTION_ID || !USERS_COLLECTION_ID) {
+if (!LECTURES_COLLECTION_ID || !INTERVIEWS_COLLECTION_ID || !VOUCHERS_COLLECTION_ID || !TRANSACTIONS_COLLECTION_ID || !USERS_COLLECTION_ID || !QA_REPORTS_COLLECTION_ID) {
     console.error("One or more critical Appwrite Collection IDs are missing. Please check src/lib/appwrite.ts and ensure they are correctly set.");
 }
 if (!APPWRITE_DATABASE_ID) {
