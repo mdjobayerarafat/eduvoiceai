@@ -42,7 +42,6 @@ export function LoginForm() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
-      // Use Appwrite's native email/password session creation
       await account.createEmailPasswordSession(values.email, values.password);
       
       toast({
@@ -50,29 +49,44 @@ export function LoginForm() {
         description: `Welcome back!`,
       });
       
-      // Redirect to dashboard or intended page
       router.push("/dashboard");
 
     } catch (error: any) {
-      let description = "An unexpected error occurred. Please try again.";
+      let toastDescription = "An unexpected error occurred. Please try again.";
+      let formFieldError: string | null = "Login failed. Please check your details.";
+
       if (error instanceof AppwriteException) {
-        if (error.code === 401 || error.type === 'user_invalid_credentials') {
-          description = "Invalid email or password. Please check your credentials.";
+        if (error.message && error.message.toLowerCase().includes("failed to fetch")) {
+          toastDescription = "Network Error: Could not connect to Appwrite. Please check your internet connection, Appwrite server status, and CORS configuration in your Appwrite project settings. Ensure NEXT_PUBLIC_APPWRITE_ENDPOINT is correct.";
+          formFieldError = "Network error. Please try again later.";
+        } else if (error.code === 401 || error.type === 'user_invalid_credentials') {
+          toastDescription = "Invalid email or password. Please check your credentials.";
+          formFieldError = "Invalid email or password.";
         } else if (error.type === 'user_not_found') {
-          description = "No account found with this email address.";
+          toastDescription = "No account found with this email address.";
+          formFieldError = "Account not found.";
         } else {
-          description = error.message; // Use Appwrite's error message
+          toastDescription = error.message; 
+          formFieldError = error.message.substring(0, 50); // Keep form error concise
         }
       } else if (error.message) {
-        description = error.message;
+        toastDescription = error.message;
+        if (error.message.toLowerCase().includes("failed to fetch")) {
+           toastDescription = "Network Error: Could not connect. Please check your internet connection and server status.";
+           formFieldError = "Network error. Please try again.";
+        }
       }
+      
       toast({
         title: "Login Failed",
-        description: description,
+        description: toastDescription,
         variant: "destructive",
+        duration: 7000,
       });
-      // Optionally set form error for a more integrated feel, though toast is often sufficient
-      form.setError("password", { message: "Invalid credentials" }); // Generic error on a field
+      
+      if (formFieldError) {
+        form.setError("email", { message: formFieldError });
+      }
     }
   }
 
@@ -129,10 +143,6 @@ export function LoginForm() {
             <Link href="/register">Register</Link>
           </Button>
         </p>
-        {/* You can add a password reset link here if you implement that feature */}
-        {/* <Button variant="link" size="sm" asChild className="text-xs p-0 h-auto">
-            <Link href="/(auth)/reset-password">Forgot Password?</Link>
-        </Button> */}
       </CardFooter>
     </Card>
   );

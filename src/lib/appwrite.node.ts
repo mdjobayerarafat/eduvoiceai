@@ -49,7 +49,7 @@ const avatars = new Avatars(client);
 export { client, databases, users, storage, avatars, ID, Permission, Role, Query, AppwriteException, clientInitialized, initializationError };
 
 // Re-export collection IDs
-export const APPWRITE_DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
+export const APPWRITE_DATABASE_ID = "683b4104002d15ee742c";
 export const LECTURES_COLLECTION_ID = "683b410f00019daca347";
 export const INTERVIEWS_COLLECTION_ID = "683b4b0300073d4d422d"; // interview_reports
 export const VOUCHERS_COLLECTION_ID = "683b7afb0005412f9f72";

@@ -45,17 +45,6 @@ const databases = new Appwrite.Databases(client);
 const storage = new Appwrite.Storage(client);
 const avatars = new Appwrite.Avatars(client);
 
-let usersServiceInstance;
-if (Appwrite.Users) {
-  usersServiceInstance = new Appwrite.Users(client);
-  console.log('Appwrite.Users service successfully instantiated.');
-} else {
-  console.error('CRITICAL: Appwrite.Users constructor is not found on the imported Appwrite SDK object. The Users service cannot be initialized.');
-  usersServiceInstance = undefined; 
-}
-
-
-// Re-export Appwrite utilities for convenience
 const ID = Appwrite.ID;
 const Permission = Appwrite.Permission;
 const Role = Appwrite.Role;
@@ -63,7 +52,7 @@ const Query = Appwrite.Query;
 const AppwriteException = Appwrite.AppwriteException;
 
 // Export the instance as 'users'
-export { client, account, databases, storage, avatars, usersServiceInstance as users, ID, Permission, Role, Query, AppwriteException };
+export { client, account, databases, storage, avatars, ID, Permission, Role, Query, AppwriteException };
 
 
 export const APPWRITE_DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;

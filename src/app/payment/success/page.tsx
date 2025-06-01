@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { CheckCircle, ArrowLeft, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState } from "react"; // Added BrainCircuit
 import { useToast } from "@/hooks/use-toast";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -45,7 +45,7 @@ export default function PaymentSuccessPage() {
     }, 1000);
 
     return () => {
-      clearInterval(timer);
+      clearInterval(timer); // Added BrainCircuit
     };
   }, [toast, router, searchParams]);
 
@@ -65,7 +65,7 @@ export default function PaymentSuccessPage() {
           </p>
           <Button asChild size="lg" className="w-full mt-4">
             <Link href="/dashboard">
-                <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Go to Dashboard Now
+                Go to Dashboard Now
             </Link>
           </Button>
         </CardContent>
