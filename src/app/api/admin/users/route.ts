@@ -6,19 +6,18 @@ import {
   USERS_COLLECTION_ID, 
   clientInitialized, 
   initializationError,
-  Query
+  Query,
+  AppwriteException
 } from '@/lib/appwrite.node';
 import type { Models } from 'node-appwrite';
 
-// Define a type for the documents expected from USERS_COLLECTION_ID
-// This should align with your actual collection attributes
 interface CustomUserDocument extends Models.Document {
   username: string;
   email: string;
-  role?: string; // Assuming a 'role' attribute for admin status
-  subscription_status?: string;
+  role?: string; 
+  subscription_status?: "trial" | "active" | "cancelled" | "past_due";
   token_balance?: number;
-  // Add any other relevant fields from your USERS_COLLECTION_ID
+  subscription_end_date?: string;
 }
 
 export async function GET() {
@@ -37,9 +36,8 @@ export async function GET() {
     const response = await databases.listDocuments(
       APPWRITE_DATABASE_ID,
       USERS_COLLECTION_ID,
-      [Query.limit(100)] // Add pagination or increase limit as needed
+      [Query.limit(100), Query.orderDesc("$createdAt")] 
     );
-    // Return the documents directly
     return NextResponse.json(response.documents as CustomUserDocument[]);
   } catch (error: any) {
     console.error('Error fetching users from Appwrite custom collection:', error);
@@ -47,10 +45,6 @@ export async function GET() {
   }
 }
 
-// The PUT request for updating user attributes like 'role' or 'status'
-// would typically involve updating the document in USERS_COLLECTION_ID.
-// This is more complex and requires careful consideration of what attributes
-// can be updated and by whom. For now, the PUT endpoint is kept simple.
 export async function PUT(req: NextRequest) {
   if (!clientInitialized) {
     return NextResponse.json({ message: `Server configuration error: ${initializationError}` }, { status: 500 });
@@ -60,27 +54,36 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
-    const { userId, attributesToUpdate } = await req.json();
+    const { userId, subscription_status } = await req.json();
 
-    if (!userId || !attributesToUpdate) {
-      return NextResponse.json({ message: 'Missing userId or attributesToUpdate in request body' }, { status: 400 });
+    if (!userId || !subscription_status) {
+      return NextResponse.json({ message: 'Missing userId or subscription_status in request body' }, { status: 400 });
     }
 
-    // Example: updating a 'role' attribute in the USERS_COLLECTION_ID
-    // const updatedDocument = await databases.updateDocument(
-    //   APPWRITE_DATABASE_ID,
-    //   USERS_COLLECTION_ID,
-    //   userId,
-    //   attributesToUpdate // e.g., { role: 'admin' }
-    // );
-    // return NextResponse.json({ message: 'User document updated successfully', data: updatedDocument });
+    // Validate subscription_status if needed (e.g., ensure it's one of the allowed values)
+    const allowedStatuses = ["trial", "active", "cancelled", "past_due"];
+    if (!allowedStatuses.includes(subscription_status)) {
+      return NextResponse.json({ message: 'Invalid subscription_status value.' }, { status: 400 });
+    }
 
-    // For now, returning a conceptual message as full update logic is not implemented here.
-    // The frontend "Make Admin" is also conceptual.
-    return NextResponse.json({ message: 'User update endpoint called (requires specific implementation to update custom DB)' }, { status: 202 });
+    const attributesToUpdate = { subscription_status };
+
+    const updatedDocument = await databases.updateDocument(
+      APPWRITE_DATABASE_ID,
+      USERS_COLLECTION_ID,
+      userId,
+      attributesToUpdate 
+    );
+    return NextResponse.json({ message: 'User subscription status updated successfully', data: updatedDocument as CustomUserDocument });
 
   } catch (error:any) {
-    console.error('Error updating user in custom collection:', error);
-    return NextResponse.json({ message: 'Error updating user in database', details: error.message }, { status: 500 });
+    console.error('Error updating user subscription status in custom collection:', error);
+    let details = error.message;
+    if (error instanceof AppwriteException) {
+        details = `Appwrite Error (Code: ${error.code}, Type: ${error.type}): ${error.message}`;
+    }
+    return NextResponse.json({ message: 'Error updating user subscription status', details }, { status: 500 });
   }
 }
+
+    

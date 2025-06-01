@@ -7,53 +7,54 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Users, MoreHorizontal, Search, Filter, Download, ShieldCheck, Ban, TrendingUp, Loader2, AlertTriangle } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuRadioGroup, DropdownMenuRadioItem } from "@/components/ui/dropdown-menu";
+import { Users, MoreHorizontal, Search, Filter, Download, ShieldCheck, Ban, TrendingUp, Loader2, AlertTriangle, Edit, Coins, CalendarDays } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { account, AppwriteException } from "@/lib/appwrite"; // For admin check
-import { formatDistanceToNow } from 'date-fns';
-import type { Models } from 'appwrite'; // For Models.Document
+import { account, AppwriteException, databases, APPWRITE_DATABASE_ID, USERS_COLLECTION_ID } from "@/lib/appwrite"; 
+import { format, formatDistanceToNow, parseISO } from 'date-fns';
+import type { Models } from 'appwrite';
+import { useToast } from "@/hooks/use-toast";
 
-// Type for user documents fetched from your custom USERS_COLLECTION_ID
 interface CustomUserDocument extends Models.Document {
-  username: string; // Expect username from custom collection
+  username: string; 
   email: string;
-  role?: "admin" | "user"; // Assuming 'role' attribute exists
+  role?: "admin" | "user"; 
   subscription_status?: "trial" | "active" | "cancelled" | "past_due";
-  // Add other fields from your USERS_COLLECTION_ID as needed
-  // $createdAt is a standard Appwrite document attribute
+  token_balance?: number;
+  subscription_end_date?: string; 
 }
 
+const subscriptionStatuses: CustomUserDocument['subscription_status'][] = ["trial", "active", "cancelled", "past_due"];
 
-// Function to determine user status based on custom user document fields
 const getConceptualUserStatus = (user: CustomUserDocument): string => {
   if (user.subscription_status === "active") return "Active";
   if (user.subscription_status === "trial") return "Trial";
   if (user.subscription_status === "cancelled") return "Cancelled";
   if (user.subscription_status === "past_due") return "Past Due";
-  return "Unknown"; // Default status
+  return "Unknown"; 
 };
 
 export default function ManageUsersPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [userList, setUserList] = useState<CustomUserDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingStatusForUser, setEditingStatusForUser] = useState<string | null>(null);
+
 
   useEffect(() => {
     const fetchUsersAndCheckAdmin = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        // 1. Check if the current user is an admin (using Appwrite Auth labels)
-        const currentUser = await account.get(); // Fetches Appwrite Auth user
+        const currentUser = await account.get(); 
         if (!currentUser.labels || !currentUser.labels.includes("admin")) {
-          router.push("/dashboard"); // Redirect non-admins
+          router.push("/dashboard"); 
           return;
         }
 
-        // 2. Fetch users from your custom database collection via the API route
         const response = await fetch('/api/admin/users');
         if (!response.ok) {
           const errorData = await response.json();
@@ -83,10 +84,48 @@ export default function ManageUsersPage() {
     (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
   
-  // Conceptual actions - these would require backend logic to update the user's document in USERS_COLLECTION_ID (for role)
-  // or update labels on the Appwrite Auth user object.
   const handleMakeAdmin = (userId: string) => alert(`Conceptual: Make user ${userId} admin. Requires backend logic to update 'role' attribute in the custom user collection or Auth user labels.`);
   const handleBanUser = (userId: string) => alert(`Conceptual: Ban user ${userId}. Requires backend logic to update 'subscription_status' or a dedicated 'status' field in the custom user collection.`);
+
+  const handleUpdateSubscriptionStatus = async (userId: string, newStatus: CustomUserDocument['subscription_status']) => {
+    if (!newStatus) return;
+    setEditingStatusForUser(userId); // Indicate loading for this specific user action
+
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, subscription_status: newStatus }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || `Failed to update status for user ${userId}`);
+      }
+
+      // Update local state
+      setUserList(prevList => 
+        prevList.map(user => 
+          user.$id === userId ? { ...user, subscription_status: newStatus } : user
+        )
+      );
+
+      toast({
+        title: "Status Updated",
+        description: `Subscription status for user ${result.data.username || result.data.email} updated to ${newStatus}.`,
+      });
+    } catch (err: any) {
+      console.error("Error updating subscription status:", err);
+      toast({
+        title: "Update Failed",
+        description: err.message || "Could not update user subscription status.",
+        variant: "destructive",
+      });
+    } finally {
+      setEditingStatusForUser(null);
+    }
+  };
 
 
   if (isLoading) {
@@ -162,6 +201,8 @@ export default function ManageUsersPage() {
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead><Coins className="inline h-4 w-4 mr-1"/>Tokens</TableHead>
+                <TableHead><CalendarDays className="inline h-4 w-4 mr-1"/>Sub. End</TableHead>
                 <TableHead>Joined</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -192,12 +233,14 @@ export default function ManageUsersPage() {
                       {getConceptualUserStatus(user)}
                     </Badge>
                   </TableCell>
+                  <TableCell>{user.token_balance?.toLocaleString() ?? 'N/A'}</TableCell>
+                  <TableCell>{user.subscription_end_date ? format(parseISO(user.subscription_end_date), 'PP') : 'N/A'}</TableCell>
                   <TableCell>{formatDistanceToNow(new Date(user.$createdAt), { addSuffix: true })}</TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button aria-haspopup="true" size="icon" variant="ghost">
-                          <MoreHorizontal className="h-4 w-4" />
+                        <Button aria-haspopup="true" size="icon" variant="ghost" disabled={editingStatusForUser === user.$id}>
+                          {editingStatusForUser === user.$id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
                           <span className="sr-only">Toggle menu</span>
                         </Button>
                       </DropdownMenuTrigger>
@@ -206,13 +249,33 @@ export default function ManageUsersPage() {
                         <DropdownMenuItem onClick={() => alert(`View activity for ${user.username}. Requires activity logging collection.`)}>
                           <TrendingUp className="mr-2 h-4 w-4" /> View Activity
                         </DropdownMenuItem>
+                        
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <Edit className="mr-2 h-4 w-4" />
+                            <span>Change Sub. Status</span>
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent>
+                            <DropdownMenuRadioGroup 
+                              value={user.subscription_status}
+                              onValueChange={(newStatus) => handleUpdateSubscriptionStatus(user.$id, newStatus as CustomUserDocument['subscription_status'])}
+                            >
+                              {subscriptionStatuses.map((status) => (
+                                <DropdownMenuRadioItem key={status} value={status || ""}>
+                                  {status ? status.charAt(0).toUpperCase() + status.slice(1) : "None"}
+                                </DropdownMenuRadioItem>
+                              ))}
+                            </DropdownMenuRadioGroup>
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+
                         {user.role !== "admin" && (
                         <DropdownMenuItem onClick={() => handleMakeAdmin(user.$id)}>
                           <ShieldCheck className="mr-2 h-4 w-4" /> Make Admin
                         </DropdownMenuItem>
                         )}
                         <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleBanUser(user.$id)}>
-                          <Ban className="mr-2 h-4 w-4" /> Ban User
+                          <Ban className="mr-2 h-4 w-4" /> Ban User (Conceptual)
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -221,7 +284,7 @@ export default function ManageUsersPage() {
               ))}
               {filteredUsers.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center">
+                  <TableCell colSpan={8} className="h-24 text-center">
                     {userList.length > 0 ? "No users found matching your search." : "No users found in the system."}
                   </TableCell>
                 </TableRow>
@@ -229,10 +292,12 @@ export default function ManageUsersPage() {
             </TableBody>
           </Table>
            <p className="mt-4 text-xs text-destructive">
-            Note: User data is fetched from your custom Appwrite collection. Actions like 'Make Admin' or 'Ban User' are conceptual and require backend implementation to update the custom collection or related Auth user.
+            Note: User data is fetched from your custom Appwrite collection. 'Make Admin' or 'Ban User' are conceptual. Updating Subscription Status now works via API.
           </p>
         </CardContent>
       </Card>
     </div>
   );
 }
+
+    
