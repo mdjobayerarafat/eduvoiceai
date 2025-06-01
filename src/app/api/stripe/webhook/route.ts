@@ -128,15 +128,14 @@ export async function POST(request: NextRequest) {
       try {
         console.log(`Stripe Webhook: Attempting to fetch Appwrite user document for userId: ${userId}`);
         userProfileDoc = await databases.getDocument(APPWRITE_DATABASE_ID, USERS_COLLECTION_ID, userId) as UserProfileDocument;
-        console.log(`Stripe Webhook: Successfully fetched Appwrite user document for userId: ${userId}`);
+        console.log(`Stripe Webhook: Successfully fetched Appwrite user document for userId: ${userId}. Current token balance: ${userProfileDoc.token_balance}, status: ${userProfileDoc.subscription_status}`);
       } catch (fetchError: any) {
         if (fetchError instanceof AppwriteException && fetchError.code === 404) {
           console.error(`Stripe Webhook Error: User profile with ID ${userId} not found in Appwrite.`);
-          // Acknowledge to Stripe so it doesn't retry for a non-existent user.
-          return NextResponse.json({ message: `User profile ${userId} not found.` }, { status: 200 }); // Or 404, but 200 stops retries.
+          return NextResponse.json({ message: `User profile ${userId} not found.` }, { status: 200 }); 
         }
         console.error(`Stripe Webhook Error: Error fetching user profile from Appwrite for userId ${userId}:`, fetchError);
-        throw fetchError; // Re-throw other fetch errors to be caught by outer catch
+        throw fetchError; 
       }
 
       const currentTokenBalance = userProfileDoc.token_balance ?? 0;
@@ -150,36 +149,48 @@ export async function POST(request: NextRequest) {
         subscription_status: 'active',
         subscription_end_date: newSubscriptionEndDate.toISOString(),
       };
-      // Only add Stripe IDs if they are present
       if (stripeCustomerId) updatedUserData.stripe_customer_id = stripeCustomerId;
       if (subscriptionId) updatedUserData.stripe_subscription_id = subscriptionId;
       
-      console.log(`Stripe Webhook: Preparing to update Appwrite user ${userId} with:`, updatedUserData);
-      await databases.updateDocument(APPWRITE_DATABASE_ID, USERS_COLLECTION_ID, userId, updatedUserData);
-      console.log(`Stripe Webhook: Successfully updated Appwrite user document for ${userId}.`);
-
-      // Log the transaction
-      const transactionDescription = `EduVoice AI Pro Plan activated via Stripe. ${SUBSCRIPTION_TOKEN_GRANT} tokens added. Stripe Session: ${session.id}`;
-      console.log(`Stripe Webhook: Preparing to log transaction for user ${userId}: ${transactionDescription}`);
-      await databases.createDocument(
-        APPWRITE_DATABASE_ID,
-        TRANSACTIONS_COLLECTION_ID,
-        AppwriteID.unique(),
-        {
-          user_id: userId,
-          type: 'subscription_purchase_stripe',
-          token_amount_changed: SUBSCRIPTION_TOKEN_GRANT,
-          new_balance: newTokenBalance,
-          transaction_description: transactionDescription,
-          timestamp: new Date().toISOString(),
-          reference_id: session.id, // Store Stripe session ID as reference
+      try {
+        console.log(`Stripe Webhook: Preparing to update Appwrite user ${userId} with:`, updatedUserData);
+        await databases.updateDocument(APPWRITE_DATABASE_ID, USERS_COLLECTION_ID, userId, updatedUserData);
+        console.log(`Stripe Webhook: Successfully updated Appwrite user document for ${userId}.`);
+      } catch (updateError: any) {
+        console.error(`Stripe Webhook Error: Failed to update Appwrite user document for userId "${userId}":`, updateError);
+        if (updateError instanceof AppwriteException) {
+          console.error(`Stripe Webhook Error: AppwriteException updating user: Code ${updateError.code}, Type ${updateError.type}, Message: ${updateError.message}`);
         }
-      );
-      console.log(`Stripe Webhook: Successfully logged transaction for user ${userId}.`);
+        // Important: Return 500 to Stripe so it knows to retry this webhook if the update fails.
+        return NextResponse.json({ message: 'Failed to update user profile in Appwrite.', details: updateError.message }, { status: 500 });
+      }
+
+
+      const transactionDescription = `EduVoice AI Pro Plan activated via Stripe webhook. ${SUBSCRIPTION_TOKEN_GRANT} tokens added. Stripe Session: ${session.id}`;
+      try {
+        console.log(`Stripe Webhook: Preparing to log transaction for user ${userId}: ${transactionDescription}`);
+        await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          TRANSACTIONS_COLLECTION_ID,
+          AppwriteID.unique(),
+          {
+            user_id: userId,
+            type: 'subscription_purchase_stripe_webhook',
+            token_amount_changed: SUBSCRIPTION_TOKEN_GRANT,
+            new_balance: newTokenBalance,
+            transaction_description: transactionDescription,
+            timestamp: new Date().toISOString(),
+            reference_id: session.id, 
+          }
+        );
+        console.log(`Stripe Webhook: Successfully logged transaction for user ${userId}.`);
+      } catch (logError: any) {
+         console.warn(`Stripe Webhook Warning: Failed to log transaction for user ${userId} after subscription update. Error:`, logError);
+         // Don't fail the webhook response if only logging fails.
+      }
       console.log(`Stripe Webhook: Successfully processed Stripe checkout.session.completed for user ${userId}. Tokens added, subscription active.`);
     } catch (error: any) {
-      console.error(`Stripe Webhook Error: Error processing event and updating Appwrite DB for user ${userId}:`, error);
-      // Return 500 to Stripe so it knows to retry (if applicable for this type of error)
+      console.error(`Stripe Webhook Error: General error processing event and updating Appwrite DB for user ${userId}:`, error);
       return NextResponse.json({ message: 'Internal server error while updating user data.', details: error.message }, { status: 500 });
     }
   } else {
@@ -188,4 +199,3 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ received: true });
 }
-

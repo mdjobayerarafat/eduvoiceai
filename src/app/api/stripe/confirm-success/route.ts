@@ -49,19 +49,16 @@ export async function GET(request: NextRequest) {
     console.log('  (No search parameters found in the URL)');
   }
 
-
   if (!userId) {
-    console.error('API Route /confirm-success Error: client_reference_id (userId) was NOT found in redirect from Stripe.');
+    console.error('API Route /confirm-success Error: client_reference_id (userId) missing in redirect from Stripe.');
     return NextResponse.redirect(new URL('/payment/cancel?error=missing_user_id', request.url));
   }
   
   console.log(`API Route /confirm-success: DIAGNOSTIC - Extracted client_reference_id (userId) Value: "${userId}"`);
   console.log(`API Route /confirm-success: DIAGNOSTIC - userId length: ${userId.length}`);
   console.log(`API Route /confirm-success: DIAGNOSTIC - userId starts with underscore?: ${userId.startsWith('_')}`);
-  // Basic regex for typical Appwrite ID: Alphanumeric, up to 36 chars.
   console.log(`API Route /confirm-success: DIAGNOSTIC - userId basic Appwrite ID pattern test (a-zA-Z0-9): ${/^[a-zA-Z0-9]{1,36}$/.test(userId)}`);
 
-  // Pre-emptive checks based on Appwrite's error message before calling Appwrite
   if (userId.length > 36) {
       const errMsg = `userId "${userId}" is longer than 36 characters.`;
       console.error(`API Route /confirm-success Error: ${errMsg}`);
@@ -72,20 +69,18 @@ export async function GET(request: NextRequest) {
       console.error(`API Route /confirm-success Error: ${errMsg}`);
        return NextResponse.redirect(new URL(`/payment/cancel?error=invalid_user_id_format_underscore&details=${encodeURIComponent(errMsg)}`, request.url));
   }
-  // Stricter check for Appwrite UID characters (a-z, A-Z, 0-9, underscore only)
-  if (!/^[a-zA-Z0-9_]{1,36}$/.test(userId)) {
+  if (!/^[a-zA-Z0-9_]{1,36}$/.test(userId)) { // Stricter check
       const errMsg = `userId "${userId}" contains invalid characters for an Appwrite UID. Valid chars are a-z, A-Z, 0-9, and underscore. Max 36 chars. Cannot start with an underscore. Full URL was: ${request.url}`;
       console.error(`API Route /confirm-success Error: ${errMsg}`);
       return NextResponse.redirect(new URL(`/payment/cancel?error=invalid_user_id_pattern&details=${encodeURIComponent(errMsg)}`, request.url));
   }
-
 
   try {
     let userProfileDoc: UserProfileDocument;
     try {
       console.log(`API Route /confirm-success: Attempting to fetch Appwrite user document for userId: "${userId}" using DB ID: ${APPWRITE_DATABASE_ID} and Collection ID: ${USERS_COLLECTION_ID}`);
       userProfileDoc = await databases.getDocument(APPWRITE_DATABASE_ID, USERS_COLLECTION_ID, userId) as UserProfileDocument;
-      console.log(`API Route /confirm-success: Successfully fetched Appwrite user document for userId: ${userId}`);
+      console.log(`API Route /confirm-success: Successfully fetched Appwrite user document for userId: ${userId}. Current token balance: ${userProfileDoc.token_balance}, status: ${userProfileDoc.subscription_status}`);
     } catch (fetchError: any) {
       let errorReason = 'fetch_user_failed';
       let errorDetails = fetchError.message;
@@ -116,28 +111,44 @@ export async function GET(request: NextRequest) {
       subscription_end_date: newSubscriptionEndDate.toISOString(),
     };
     
-    console.log(`API Route /confirm-success: Preparing to update Appwrite user ${userId} with:`, updatedUserData);
-    await databases.updateDocument(APPWRITE_DATABASE_ID, USERS_COLLECTION_ID, userId, updatedUserData);
-    console.log(`API Route /confirm-success: Successfully updated Appwrite user document for ${userId}.`);
+    try {
+      console.log(`API Route /confirm-success: Preparing to update Appwrite user ${userId} with:`, updatedUserData);
+      await databases.updateDocument(APPWRITE_DATABASE_ID, USERS_COLLECTION_ID, userId, updatedUserData);
+      console.log(`API Route /confirm-success: Successfully updated Appwrite user document for ${userId}.`);
+    } catch (updateError: any) {
+      console.error(`API Route /confirm-success Error: Failed to update Appwrite user document for userId "${userId}":`, updateError);
+      let errorReason = 'update_user_failed';
+      let errorDetails = updateError.message;
+      if (updateError instanceof AppwriteException) {
+         console.error(`API Route /confirm-success Error: AppwriteException updating user: Code ${updateError.code}, Type ${updateError.type}, Message: ${updateError.message}`);
+      }
+      return NextResponse.redirect(new URL(`/payment/cancel?error=${errorReason}&details=${encodeURIComponent(errorDetails)}`, request.url));
+    }
+
 
     const transactionDescription = `EduVoice AI Pro Plan activated via Stripe success_url redirect. ${SUBSCRIPTION_TOKEN_GRANT} tokens added.`;
-    console.log(`API Route /confirm-success: Preparing to log transaction for user ${userId}: ${transactionDescription}`);
-    await databases.createDocument(
-      APPWRITE_DATABASE_ID,
-      TRANSACTIONS_COLLECTION_ID,
-      AppwriteID.unique(),
-      {
-        user_id: userId,
-        type: 'subscription_purchase_stripe_redirect',
-        token_amount_changed: SUBSCRIPTION_TOKEN_GRANT,
-        new_balance: newTokenBalance,
-        transaction_description: transactionDescription,
-        timestamp: new Date().toISOString(),
-      }
-    );
-    console.log(`API Route /confirm-success: Successfully logged transaction for user ${userId}.`);
-    console.log(`API Route /confirm-success: Successfully processed Stripe redirect for user ${userId}. Tokens added, subscription active. Redirecting to /payment/success.`);
+    try {
+      console.log(`API Route /confirm-success: Preparing to log transaction for user ${userId}: ${transactionDescription}`);
+      await databases.createDocument(
+        APPWRITE_DATABASE_ID,
+        TRANSACTIONS_COLLECTION_ID,
+        AppwriteID.unique(),
+        {
+          user_id: userId,
+          type: 'subscription_purchase_stripe_redirect',
+          token_amount_changed: SUBSCRIPTION_TOKEN_GRANT,
+          new_balance: newTokenBalance,
+          transaction_description: transactionDescription,
+          timestamp: new Date().toISOString(),
+        }
+      );
+      console.log(`API Route /confirm-success: Successfully logged transaction for user ${userId}.`);
+    } catch (logError: any) {
+        console.warn(`API Route /confirm-success Warning: Failed to log transaction for user ${userId}, but subscription was updated. Error:`, logError);
+        // Don't fail redirect if only logging fails, but log it as a warning.
+    }
 
+    console.log(`API Route /confirm-success: Successfully processed Stripe redirect for user ${userId}. Tokens added, subscription active. Redirecting to /payment/success.`);
     return NextResponse.redirect(new URL('/payment/success', request.url));
 
   } catch (error: any) {
@@ -145,4 +156,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL(`/payment/cancel?error=processing_failed&details=${encodeURIComponent(error.message)}`, request.url));
   }
 }
-
