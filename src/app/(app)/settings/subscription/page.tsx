@@ -23,7 +23,7 @@ interface UserProfileDocument extends Models.Document {
   subscription_end_date?: string; // ISO date string
 }
 
-const FREE_TOKEN_ALLOWANCE = 60000; 
+const FREE_TOKEN_ALLOWANCE = 60000;
 const VOUCHER_TOKEN_GRANT = 60000;
 const SUBSCRIPTION_TOKEN_GRANT = 60000;
 
@@ -46,50 +46,59 @@ export default function SubscriptionPage() {
 
   const fetchUserData = async () => {
     setIsLoading(true);
-    setError(null); 
+    setError(null);
     try {
-      const currentUser = await account.get(); 
+      const currentUser = await account.get();
       if (!currentUser?.$id) {
         throw new AppwriteException("User not authenticated.", 401, "user_unauthorized");
       }
       setUserId(currentUser.$id);
 
-      if (APPWRITE_DATABASE_ID && USERS_COLLECTION_ID) {
-        const userProfileDoc = await databases.getDocument(
-          APPWRITE_DATABASE_ID,
-          USERS_COLLECTION_ID,
-          currentUser.$id 
-        ) as UserProfileDocument;
-
-        setTokenBalance(userProfileDoc.token_balance ?? 0);
-        setIsProSubscribed(userProfileDoc.subscription_status === 'active');
-        setSubscriptionEndDate(userProfileDoc.subscription_end_date ?? null);
-
-      } else {
+      if (!APPWRITE_DATABASE_ID || !USERS_COLLECTION_ID) {
         throw new Error("Appwrite Database ID or Users Collection ID is not configured.");
       }
 
+      const userProfileDoc = await databases.getDocument(
+        APPWRITE_DATABASE_ID,
+        USERS_COLLECTION_ID,
+        currentUser.$id
+      ) as UserProfileDocument;
+
+      setTokenBalance(userProfileDoc.token_balance ?? 0);
+      setIsProSubscribed(userProfileDoc.subscription_status === 'active');
+      setSubscriptionEndDate(userProfileDoc.subscription_end_date ?? null);
+
     } catch (err: any) {
-      console.error("Failed to fetch user subscription data:", err);
+      console.error("Detailed error object from fetchUserData:", err); // Enhanced logging
       let specificError = "Failed to load your subscription information. Please try again.";
+      let toastTitle = "Error Loading Subscription";
+
       if (err instanceof AppwriteException) {
           if (err.code === 401 || err.type === 'user_unauthorized') {
             toast({ title: "Session Expired", description: "Please log in again.", variant: "default" });
             router.push('/login');
-            return; 
+            return;
           } else if (err.code === 404) {
-            specificError = "Your user profile data could not be found. This might happen if your account setup is incomplete. Please contact support.";
+            specificError = "Your user profile data could not be found. This might happen if your account setup is incomplete or the document does not exist. Please contact support.";
+            toastTitle = "Profile Not Found";
+          } else if (err.message && err.message.toLowerCase().includes("failed to fetch")) {
+            specificError = `Appwrite error: ${err.message}. This often indicates a network issue, a problem with the Appwrite server's reachability, or a CORS configuration error. Please ensure your Appwrite server is running and accessible, and check your Appwrite project's platform settings for correct hostnames. Also, verify your NEXT_PUBLIC_APPWRITE_ENDPOINT in the .env file.`;
+            toastTitle = "Network/CORS or Endpoint Error";
           } else {
-            specificError = `Appwrite error: ${err.message}`;
+            specificError = `Appwrite error (Type: ${err.type || 'unknown'}, Code: ${err.code || 'N/A'}): ${err.message}`;
           }
       } else if (err instanceof Error) {
           specificError = err.message;
+           if (err.message.includes("Database ID or Users Collection ID is not configured")) {
+              toastTitle = "Client Configuration Error";
+          }
       }
       setError(specificError);
       toast({
-          title: "Error Loading Subscription",
-          description: specificError.substring(0, 150), 
-          variant: "destructive"
+          title: toastTitle,
+          description: specificError.substring(0, 250) + (specificError.length > 250 ? "..." : ""),
+          variant: "destructive",
+          duration: 10000,
       });
     } finally {
       setIsLoading(false);
@@ -99,7 +108,7 @@ export default function SubscriptionPage() {
   useEffect(() => {
     fetchUserData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); 
+  }, []);
 
 
   const handleSubscribe = async () => {
@@ -128,8 +137,7 @@ export default function SubscriptionPage() {
       setTokenBalance(result.newTokenBalance);
       setIsProSubscribed(result.newSubscriptionStatus === 'active');
       setSubscriptionEndDate(result.newSubscriptionEndDate);
-      // Optionally, re-fetch all user data to ensure complete consistency
-      // await fetchUserData(); 
+      // await fetchUserData(); // Re-fetch to ensure consistency
 
     } catch (err: any) {
       toast({
@@ -179,10 +187,9 @@ export default function SubscriptionPage() {
         description: result.message || `Successfully added ${VOUCHER_TOKEN_GRANT.toLocaleString()} tokens.`,
         className: "bg-green-100 border-green-300 text-green-800"
       });
-      setTokenBalance(result.newTokenBalance); // Update token balance from API response
-      setVoucherCode(""); // Clear input
-      // Re-fetch user data to get latest balance and potentially other statuses
-      // await fetchUserData(); 
+      setTokenBalance(result.newTokenBalance);
+      setVoucherCode("");
+      // await fetchUserData(); // Re-fetch to ensure consistency
 
     } catch (err: any) {
       toast({
@@ -197,7 +204,6 @@ export default function SubscriptionPage() {
 
   const displayTokensUsed = tokenBalance !== null ? (FREE_TOKEN_ALLOWANCE - tokenBalance > 0 ? FREE_TOKEN_ALLOWANCE - tokenBalance : 0) : 0;
   const displayTokensRemaining = tokenBalance !== null ? tokenBalance : 0;
-  const displayProgress = FREE_TOKEN_ALLOWANCE > 0 && tokenBalance !== null && !isProSubscribed ? Math.min(100, ((FREE_TOKEN_ALLOWANCE - tokenBalance) / FREE_TOKEN_ALLOWANCE) * 100) : (isProSubscribed ? 100 : 0);
 
 
   if (isLoading) {
@@ -209,7 +215,7 @@ export default function SubscriptionPage() {
     );
   }
 
-   if (error && !isLoading) { 
+   if (error && !isLoading) {
     return (
       <div className="space-y-8 text-center">
         <Card className="max-w-md mx-auto border-destructive">
@@ -372,9 +378,9 @@ export default function SubscriptionPage() {
                  )}
               </div>
             ) : (
-              <Button 
-                size="lg" 
-                onClick={handleSubscribe} 
+              <Button
+                size="lg"
+                onClick={handleSubscribe}
                 className="w-full md:w-auto bg-accent hover:bg-accent/90 text-accent-foreground"
                 disabled={isSubscribing || isLoading}
               >
@@ -401,7 +407,7 @@ export default function SubscriptionPage() {
             <span className="font-semibold text-foreground">Tokens:</span> Your initial {FREE_TOKEN_ALLOWANCE.toLocaleString()} tokens allow for exploration. Vouchers and Pro plan activation add more tokens.
           </p>
            <p>
-            <span className="font-semibold text-foreground">Pro Plan:</span> While the Pro plan is active (subscription\_status = 'active'), the token deduction API will skip actual deductions, effectively giving unlimited usage. Subscribing also grants a one-time bonus of {SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens.
+            <span className="font-semibold text-foreground">Pro Plan:</span> While the Pro plan is active (subscription_status = 'active'), the token deduction API will skip actual deductions, effectively giving unlimited usage. Subscribing also grants a one-time bonus of {SUBSCRIPTION_TOKEN_GRANT.toLocaleString()} tokens.
           </p>
           <p>
             <span className="font-semibold text-foreground">Backend Logic:</span> Real token tracking, enforcing limits, and managing subscription status requires backend implementation using Appwrite Functions to interact with AI APIs, update user token counts, and manage subscription status based on Stripe webhooks.
