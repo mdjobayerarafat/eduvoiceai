@@ -1,3 +1,4 @@
+
 // topic-lecture-flow.ts
 'use server';
 
@@ -42,6 +43,7 @@ const LECTURE_PROMPT_CONFIG_BASE = {
   name: 'topicLecturePrompt',
   input: { schema: PromptDataTypeSchema }, 
   output: { schema: TopicLectureOutputSchema },
+  config: { model: 'googleai/gemini-2.0-flash' }, // Added default model
   prompt: `You are an AI assistant designed to generate lectures on various topics.
 
   Generate a comprehensive lecture on the topic: {{{topic}}}.
@@ -87,7 +89,7 @@ async function generateLectureLogic(input: TopicLectureInput): Promise<TopicLect
         const tempPrompt = tempAi.definePrompt({
           ...LECTURE_PROMPT_CONFIG_BASE,
           name: `${LECTURE_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`, // Unique name for temp prompt
-          config: { model: attempt.modelName },
+          config: { model: attempt.modelName }, // This overrides the base config's model
         });
 
         const { output } = await tempPrompt(promptData);

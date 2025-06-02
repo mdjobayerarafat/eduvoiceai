@@ -46,6 +46,7 @@ const QUIZ_GENERATION_PROMPT_CONFIG_BASE = {
   name: 'quizGenerationPrompt',
   input: { schema: PromptDataTypeSchema }, 
   output: { schema: QuizGenerationOutputSchema },
+  config: { model: 'googleai/gemini-2.0-flash' }, // Added default model
   prompt: `You are an AI assistant specializing in creating educational quizzes from PDF documents.
 Analyze the provided PDF document thoroughly. Based on its content, your tasks are:
 1.  Attempt to identify and state the main topic or subject of the document. This will be your 'extractedTopicGuess'.
@@ -93,7 +94,7 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
         const tempPrompt = tempAi.definePrompt({
           ...QUIZ_GENERATION_PROMPT_CONFIG_BASE,
           name: `${QUIZ_GENERATION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
-          config: { model: attempt.modelName },
+          config: { model: attempt.modelName }, // This overrides the base config's model
         });
 
         const { output } = await tempPrompt(promptData);

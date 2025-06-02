@@ -43,6 +43,7 @@ const FIRST_QUESTION_PROMPT_CONFIG_BASE = {
   name: 'firstQuestionPrompt',
   input: { schema: PromptDataTypeSchema }, 
   output: { schema: FirstQuestionOutputSchema },
+  config: { model: 'googleai/gemini-2.0-flash' }, // Added default model
   prompt: `You are an AI Interviewer.
 Based on the candidate's resume and the provided job description, your task is to:
 1. Start with a brief, professional opening greeting (e.g., "Hello! I'm your AI interviewer for today. Let's begin with your first question.").
@@ -89,7 +90,7 @@ async function generateFirstQuestionLogic(input: InterviewConfigInput): Promise<
         const tempPrompt = tempAi.definePrompt({
           ...FIRST_QUESTION_PROMPT_CONFIG_BASE,
           name: `${FIRST_QUESTION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
-          config: { model: attempt.modelName },
+          config: { model: attempt.modelName }, // This overrides the base config's model
         });
 
         const { output } = await tempPrompt(promptData);

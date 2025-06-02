@@ -58,6 +58,7 @@ const FINAL_FEEDBACK_PROMPT_CONFIG_BASE = {
   name: 'finalInterviewFeedbackPrompt',
   input: { schema: PromptDataTypeSchema }, 
   output: { schema: FinalInterviewFeedbackOutputSchema },
+  config: { model: 'googleai/gemini-2.0-flash' }, // Added default model
   prompt: `You are an AI career coach. The candidate has just completed a mock interview.
 The candidate's resume, the job description for the role they interviewed for, and the full transcript of the interview are provided below.
 
@@ -121,7 +122,7 @@ async function generateFinalFeedbackLogic(input: FinalInterviewFeedbackInput): P
         const tempPrompt = tempAi.definePrompt({
           ...FINAL_FEEDBACK_PROMPT_CONFIG_BASE,
           name: `${FINAL_FEEDBACK_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
-          config: { model: attempt.modelName },
+          config: { model: attempt.modelName }, // This overrides the base config's model
         });
 
         const { output } = await tempPrompt(promptData);

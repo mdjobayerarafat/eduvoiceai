@@ -57,6 +57,7 @@ const QUIZ_EVALUATION_PROMPT_CONFIG_BASE = {
   name: 'quizEvaluationPrompt',
   input: { schema: PromptDataTypeSchema }, 
   output: { schema: QuizEvaluationOutputSchema },
+  config: { model: 'googleai/gemini-2.0-flash' }, // Added default model
   prompt: `You are an AI Quiz Evaluator. Your task is to evaluate a user's answers to a quiz based on the content of a provided PDF document.
 For each question and the user's corresponding answer, you must:
 1.  Thoroughly understand the question.
@@ -123,7 +124,7 @@ async function generateEvaluationLogic(input: QuizEvaluationInput): Promise<Quiz
         const tempPrompt = tempAi.definePrompt({
           ...QUIZ_EVALUATION_PROMPT_CONFIG_BASE,
           name: `${QUIZ_EVALUATION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
-          config: { model: attempt.modelName },
+          config: { model: attempt.modelName }, // This overrides the base config's model
         });
 
         const { output } = await tempPrompt(promptData);

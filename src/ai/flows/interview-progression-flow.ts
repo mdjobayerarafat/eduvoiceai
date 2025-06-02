@@ -50,6 +50,7 @@ const INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE = {
   name: 'interviewProgressionPrompt',
   input: { schema: PromptDataTypeSchema }, 
   output: { schema: InterviewProgressionOutputSchema },
+  config: { model: 'googleai/gemini-2.0-flash' }, // Added default model
   prompt: `You are an AI Interviewer conducting a mock interview.
 The candidate's resume and the job description are provided below.
 You also have the history of questions you've asked and the candidate's answers.
@@ -113,7 +114,7 @@ async function generateFeedbackAndNextQuestionLogic(input: InterviewProgressionI
         const tempPrompt = tempAi.definePrompt({
           ...INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE,
           name: `${INTERVIEW_PROGRESSION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
-          config: { model: attempt.modelName },
+          config: { model: attempt.modelName }, // This overrides the base config's model
         });
 
         const { output } = await tempPrompt(promptData);
