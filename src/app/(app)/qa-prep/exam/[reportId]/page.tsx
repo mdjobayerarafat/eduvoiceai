@@ -41,14 +41,14 @@ export default function ExamPage() {
   const loadExamData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    setExamCompleted(false); // Reset exam completed state on load
-    setEvaluationResult(null); // Reset previous evaluation results
+    setExamCompleted(false); 
+    setEvaluationResult(null); 
 
     try {
       if (!reportId) {
         throw new Error("Report ID is missing.");
       }
-      await account.get(); // Check auth
+      await account.get(); 
 
       const fetchedReport = await databases.getDocument(
         APPWRITE_DATABASE_ID,
@@ -58,12 +58,12 @@ export default function ExamPage() {
 
       setReport(fetchedReport);
 
-      if (fetchedReport.status === "completed" && fetchedReport.overallFeedback) {
+      if (fetchedReport.status === "completed") {
         setExamCompleted(true);
         const parsedDetailedFeedback = fetchedReport.userAnswersAndFeedback ? JSON.parse(fetchedReport.userAnswersAndFeedback) : [];
         setEvaluationResult({
             overallScore: fetchedReport.overallScore || 0,
-            overallFeedback: fetchedReport.overallFeedback || "Feedback not available.",
+            overallFeedback: fetchedReport.overallFeedback || "Overall feedback not available for this completed exam.",
             detailedFeedback: parsedDetailedFeedback,
         });
         setQuestions(JSON.parse(fetchedReport.generatedQuestions || "[]"));
@@ -73,7 +73,7 @@ export default function ExamPage() {
         });
         setUserAnswers(answers);
         setIsLoading(false);
-        return;
+        return; 
       }
       
       const takeableStatuses: Array<QAReport['status']> = ["generated", "in_progress", "error_evaluating"];
@@ -94,7 +94,7 @@ export default function ExamPage() {
         const newRemainingTime = Math.max(0, initialDurationSeconds - elapsedSeconds);
         setRemainingTime(newRemainingTime);
         if (newRemainingTime <=0) {
-            handleFinishExam("timer_expired_on_load");
+            handleFinishExam("timer_expired_on_load"); // Call handleFinishExam, which is defined below
             return;
         }
       } else {
@@ -132,11 +132,12 @@ export default function ExamPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [reportId, router, toast]); // Removed handleFinishExam from here
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportId, router, toast]); // handleFinishExam is memoized with useCallback, so it's stable unless its own dependencies change
 
   useEffect(() => {
     loadExamData();
-  }, [loadExamData]); // Load data once on mount
+  }, [loadExamData]); 
 
 
   const startTimer = useCallback(() => {
@@ -154,7 +155,8 @@ export default function ExamPage() {
         return prevTime - 1;
       });
     }, 1000);
-  }, [remainingTime, examCompleted, isLoading, report]); // Removed handleFinishExam
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingTime, examCompleted, isLoading, report?.status]); // handleFinishExam is memoized
 
   useEffect(() => {
     if (remainingTime !== null && remainingTime > 0 && !isLoading && !examCompleted && report?.status === "in_progress") {
@@ -192,9 +194,6 @@ export default function ExamPage() {
     const answersArray = questions.map((_, index) => userAnswers[index] || "");
 
     try {
-      // Update status to "in_progress_evaluation" before calling the AI.
-      // This helps if the AI call itself takes a long time or fails,
-      // we know it was at least attempted.
       await databases.updateDocument(APPWRITE_DATABASE_ID, QA_REPORTS_COLLECTION_ID, reportId, {
         status: "in_progress_evaluation"
       });
@@ -252,12 +251,6 @@ export default function ExamPage() {
       setError(`Failed to submit or evaluate exam: ${err.message}`);
       toast({ title: "Submission Error", description: err.message, variant: "destructive" });
       // Do not set status to "error_evaluating" here; let the backend or next load handle it if needed.
-      // Or if the API call failed, the status would still be "in_progress_evaluation".
-      // If evaluateQuiz itself failed, status would be "in_progress_evaluation".
-      // The goal is to allow retries if the error was transient.
-      // If the user reloads, and it's still 'in_progress_evaluation', the load logic should handle it.
-      // For now, we'll rely on the user to potentially retry if this client-side part fails.
-      // The backend API `/api/qa-prep/submit-evaluation` is responsible for the final "completed" status.
     } finally {
       setIsSubmitting(false);
     }
