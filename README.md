@@ -12,7 +12,7 @@
 [![Shadcn/ui](https://img.shields.io/badge/Shadcn%2Fui-Latest-000000)](https://ui.shadcn.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[🚀 Live Demo](https://eduvoiceai.vercel.app) | [📖 Documentation](https://eduvoiceai.vercel.app/docs) | [🎯 Features](#-features)
+[🚀 Live Demo](https://eduvoiceai.vercel.app) | [📖 Documentation](https://eduvoicemain.vercel.app/docs) | [🎯 Features](#-features)
 
 </div>
 
