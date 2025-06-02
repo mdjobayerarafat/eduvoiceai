@@ -43,6 +43,8 @@ export default function ExamPage() {
     setError(null);
     setExamCompleted(false); 
     setEvaluationResult(null); 
+    setCurrentQuestionIndex(0);
+    setUserAnswers({});
 
     try {
       if (!reportId) {
@@ -57,6 +59,8 @@ export default function ExamPage() {
       ) as QAReport;
 
       setReport(fetchedReport);
+      const parsedQuestions = JSON.parse(fetchedReport.generatedQuestions || "[]") as string[];
+      setQuestions(parsedQuestions);
 
       if (fetchedReport.status === "completed") {
         setExamCompleted(true);
@@ -66,7 +70,7 @@ export default function ExamPage() {
             overallFeedback: fetchedReport.overallFeedback || "Overall feedback not available for this completed exam.",
             detailedFeedback: parsedDetailedFeedback,
         });
-        setQuestions(JSON.parse(fetchedReport.generatedQuestions || "[]"));
+        
         const answers: Record<number, string> = {};
         parsedDetailedFeedback.forEach((item: QAResultDetail, index: number) => {
             if (item.userAnswer) answers[index] = item.userAnswer;
@@ -82,9 +86,6 @@ export default function ExamPage() {
         setIsLoading(false);
         return;
       }
-
-      const parsedQuestions = JSON.parse(fetchedReport.generatedQuestions || "[]") as string[];
-      setQuestions(parsedQuestions);
       
       if (fetchedReport.startedAt && fetchedReport.status === "in_progress") {
         const startTime = new Date(fetchedReport.startedAt).getTime();
@@ -93,7 +94,7 @@ export default function ExamPage() {
         const initialDurationSeconds = fetchedReport.durationMinutes * 60;
         const newRemainingTime = Math.max(0, initialDurationSeconds - elapsedSeconds);
         setRemainingTime(newRemainingTime);
-        if (newRemainingTime <=0) {
+        if (newRemainingTime <=0 && fetchedReport.status !== "generated" && fetchedReport.status !== "error_evaluating") { // Only auto-finish if truly in_progress
             handleFinishExam("timer_expired_on_load");
             return;
         }
@@ -184,7 +185,13 @@ export default function ExamPage() {
   };
 
   const handleFinishExam = useCallback(async (reason: "manual" | "timer_expired" | "timer_expired_on_load") => {
-    if (isSubmitting || examCompleted || !report) return;
+    if (isSubmitting || examCompleted || !report || !report.pdfDataUri) {
+        if (!report?.pdfDataUri) {
+            toast({ title: "Error", description: "PDF data is missing for this report, cannot evaluate.", variant: "destructive"});
+            setError("PDF data is missing, evaluation cannot proceed.");
+        }
+        return;
+    }
     setIsSubmitting(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
@@ -198,14 +205,24 @@ export default function ExamPage() {
       });
       setReport(prev => prev ? { ...prev, status: 'in_progress_evaluation' } : null);
 
+      let userGeminiApiKey: string | undefined = undefined;
+      try {
+        const savedKeysRaw = localStorage.getItem("eduvoice_api_keys");
+        if (savedKeysRaw) {
+          const savedKeys = JSON.parse(savedKeysRaw);
+          userGeminiApiKey = savedKeys.geminiApiKey;
+        }
+      } catch (e) { console.warn("Could not read API keys from localStorage for quiz eval", e); }
 
       const evaluationInput: QuizEvaluationInput = {
+        pdfDataUri: report.pdfDataUri,
         questions: questions,
         userAnswers: answersArray,
+        ...(userGeminiApiKey && { geminiApiKey: userGeminiApiKey }),
       };
-      console.log("ExamPage: Sending to evaluateQuiz:", JSON.stringify(evaluationInput, null, 2));
+      console.log("ExamPage: Sending to evaluateQuiz:", JSON.stringify(evaluationInput.questions.length, null, 2)); // Log only question count to avoid large log
       const evaluationData = await evaluateQuiz(evaluationInput); 
-      console.log("ExamPage: Evaluation data from evaluateQuiz:", JSON.stringify(evaluationData, null, 2));
+      console.log("ExamPage: Evaluation data from evaluateQuiz:", JSON.stringify(evaluationData.overallScore, null, 2)); // Log only score to avoid large log
       
       if (!evaluationData || typeof evaluationData.overallScore !== 'number') {
         throw new Error("AI evaluation returned invalid or empty data. Please try submitting again.");
@@ -217,7 +234,7 @@ export default function ExamPage() {
           evaluationData: evaluationData, 
           userAnswers: answersArray,
       };
-      console.log("ExamPage: Payload to submit-evaluation API:", JSON.stringify(apiPayload, null, 2));
+      console.log("ExamPage: Payload to submit-evaluation API (score):", JSON.stringify(evaluationData.overallScore, null, 2));
 
       const submissionResponse = await fetch('/api/qa-prep/submit-evaluation', {
         method: 'POST',
@@ -245,7 +262,7 @@ export default function ExamPage() {
       setExamCompleted(true);
       toast({
         title: "Exam Finished & Evaluated!",
-        description: `Your score: ${evaluationData.overallScore}/${updatedReport.maxScore || questions.length}. ${evaluationData.overallFeedback}`,
+        description: `Your score: ${evaluationData.overallScore}/${updatedReport.maxScore || questions.length}. ${evaluationData.overallFeedback.substring(0, 100)}...`,
         className: "bg-green-100 border-green-300 text-green-800",
         duration: 8000,
       });
@@ -254,6 +271,7 @@ export default function ExamPage() {
       console.error("Error finishing exam (client-side):", err);
       setError(`Failed to submit or evaluate exam: ${err.message}`);
       toast({ title: "Submission Error", description: err.message, variant: "destructive" });
+      // No client-side status update to error_evaluating here; let backend handle or allow retry.
     } finally {
       setIsSubmitting(false);
     }
@@ -331,7 +349,7 @@ export default function ExamPage() {
                     <CardTitle className="font-headline text-xl">Overall Feedback</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <p className="mt-2 whitespace-pre-wrap">{evaluationResult.overallFeedback}</p>
+                    <p className="mt-2 whitespace-pre-wrap">{evaluationResult.overallFeedback || "Overall feedback not generated."}</p>
                 </CardContent>
             </Card>
             <Card>
@@ -343,6 +361,9 @@ export default function ExamPage() {
                         <Card key={index} className="p-4">
                             <p className="font-semibold">Q{index + 1}: {item.questionText}</p>
                             <p className="text-sm mt-1">Your Answer: <span className="p-1 rounded bg-muted/50 whitespace-pre-wrap">{item.userAnswer || <i className="text-muted-foreground">No answer provided.</i>}</span></p>
+                            {item.isCorrect === false && (
+                                <p className="text-sm mt-1 font-medium text-blue-600">Correct Answer: <span className="p-1 rounded bg-blue-500/10 whitespace-pre-wrap">{item.correctAnswer}</span></p>
+                            )}
                             <div className={`mt-2 p-2 rounded ${item.isCorrect ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
                                 <p className="text-sm font-medium flex items-center">
                                     {item.isCorrect ? <CheckCircle className="mr-2 h-4 w-4 text-green-600"/> : <XCircle className="mr-2 h-4 w-4 text-red-600"/>}

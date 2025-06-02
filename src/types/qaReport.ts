@@ -7,6 +7,7 @@ import type { Models } from 'appwrite';
 export interface QAReport extends Models.Document {
   userId: string;
   pdfFileName?: string;
+  pdfDataUri?: string; // Added to store the PDF content for evaluation
   quizTitle: string;
   numQuestionsSet: number;      // Number of questions the user selected
   numQuestionsGenerated: number;// Actual number of questions the AI generated
@@ -32,9 +33,9 @@ export interface QAReport extends Models.Document {
 export interface QAResultDetail {
   questionText: string;
   userAnswer?: string;
-  correctAnswer?: string; // If applicable / known
+  correctAnswer?: string; // The AI-derived correct answer
   aiFeedback?: string;    // AI's feedback on the user's answer
-  isCorrect?: boolean;    // Determined by AI or comparison
-  score?: number;         // Score for this individual question
+  isCorrect?: boolean;    // Determined by AI or comparison (true if score is 1)
+  score?: number;         // Score for this individual question (0 or 1)
 }
 

@@ -110,7 +110,7 @@ export default function QAPrepPage() {
       setIsLoading(false);
       return;
     }
-    const userId = currentUser.$id; // userId is now defined if we reach here
+    const userId = currentUser.$id; 
 
     const pdfFile = values.pdfFile[0];
     const numQuestionsSelected = parseInt(values.numQuestions);
@@ -194,13 +194,13 @@ export default function QAPrepPage() {
       const quizReportDataToSave: Omit<QAReport, keyof Models.Document | '$permissions' | '$databaseId' | '$collectionId'> = {
         userId: userId,
         pdfFileName: pdfFile.name,
+        pdfDataUri: pdfDataUri, // Save the PDF Data URI
         quizTitle: generatedQuizOutput.extractedTopicGuess || `Quiz from ${pdfFile.name}`,
         numQuestionsSet: numQuestionsSelected,
         numQuestionsGenerated: generatedQuizOutput.questions.length,
         durationMinutes: durationSelected,
         generatedQuestions: JSON.stringify(generatedQuizOutput.questions),
         status: "generated",
-        // overallScore, maxScore, overallFeedback, userAnswersAndFeedback, startedAt, completedAt will be null/default
       };
 
       const createdDocument = await databases.createDocument(
@@ -420,7 +420,7 @@ export default function QAPrepPage() {
         <CardContent className="text-sm text-muted-foreground space-y-2">
             <p>This feature saves generated quizzes to the <strong>qa_reports</strong> collection. The schema includes attributes like:</p>
             <ul className="list-disc pl-5 space-y-1 text-xs">
-                <li>`userId`, `pdfFileName`, `quizTitle`, `numQuestionsSet`, `numQuestionsGenerated`, `durationMinutes`, `generatedQuestions` (JSON string), `status`.</li>
+                <li>`userId`, `pdfFileName`, `pdfDataUri`, `quizTitle`, `numQuestionsSet`, `numQuestionsGenerated`, `durationMinutes`, `generatedQuestions` (JSON string), `status`.</li>
                 <li>After exam completion: `overallScore`, `maxScore`, `overallFeedback`, `userAnswersAndFeedback` (JSON string), `startedAt`, `completedAt`.</li>
             </ul>
              <p className="text-xs text-destructive mt-2">
