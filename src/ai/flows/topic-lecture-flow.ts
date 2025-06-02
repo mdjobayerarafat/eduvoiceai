@@ -41,9 +41,9 @@ const PromptDataTypeSchema = z.object({
 
 const LECTURE_PROMPT_CONFIG_BASE = {
   name: 'topicLecturePrompt',
-  input: { schema: PromptDataTypeSchema }, 
+  input: { schema: PromptDataTypeSchema },
   output: { schema: TopicLectureOutputSchema },
-  config: { model: 'googleai/gemini-2.0-flash' }, // Added default model
+  config: { model: 'googleai/gemini-2.0-flash' }, // Ensure model is in base config
   prompt: `You are an AI assistant designed to generate lectures on various topics.
 
   Generate a comprehensive lecture on the topic: {{{topic}}}.
@@ -58,7 +58,12 @@ const LECTURE_PROMPT_CONFIG_BASE = {
   `,
 };
 
-const topicLectureGlobalPlatformPrompt = ai.definePrompt(LECTURE_PROMPT_CONFIG_BASE);
+// This prompt will use the globally configured `ai` instance which should now have GEMINI_API_KEY (if set in .env)
+const topicLectureGlobalPlatformPrompt = ai.definePrompt({
+  ...LECTURE_PROMPT_CONFIG_BASE, // Spreads input, output, prompt text, AND config.model
+  name: `${LECTURE_PROMPT_CONFIG_BASE.name}_platformDefault_${Date.now()}`, // Ensure unique name
+});
+
 
 async function generateLectureLogic(input: TopicLectureInput): Promise<TopicLectureOutput> {
   let llmResponse: TopicLectureOutput | undefined;
@@ -74,8 +79,8 @@ async function generateLectureLogic(input: TopicLectureInput): Promise<TopicLect
     // { // Removing OpenAI attempt as @genkit-ai/openai is not available
     //   providerName: 'OpenAI',
     //   apiKey: input.openaiApiKey,
-    //   plugin: openai, 
-    //   modelName: 'openai/gpt-4o-mini', 
+    //   plugin: openai,
+    //   modelName: 'openai/gpt-4o-mini',
     // },
   ];
 
@@ -87,7 +92,7 @@ async function generateLectureLogic(input: TopicLectureInput): Promise<TopicLect
           plugins: [attempt.plugin({ apiKey: attempt.apiKey })],
         });
         const tempPrompt = tempAi.definePrompt({
-          ...LECTURE_PROMPT_CONFIG_BASE,
+          ...LECTURE_PROMPT_CONFIG_BASE, // Spreads input, output, prompt text
           name: `${LECTURE_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`, // Unique name for temp prompt
           config: { model: attempt.modelName }, // This overrides the base config's model
         });
@@ -95,9 +100,9 @@ async function generateLectureLogic(input: TopicLectureInput): Promise<TopicLect
         const { output } = await tempPrompt(promptData);
         llmResponse = output;
         if (!llmResponse) throw new Error(`Model (${attempt.providerName}) returned no output.`);
-        
+
         console.log(`Successfully used user-provided ${attempt.providerName} API key for lecture generation.`);
-        return llmResponse; 
+        return llmResponse;
       } catch (e: any) {
         console.warn(`Error using user-provided ${attempt.providerName} API key for lecture:`, e.message);
         const errorMessage = (e.message || "").toLowerCase();
@@ -114,18 +119,16 @@ async function generateLectureLogic(input: TopicLectureInput): Promise<TopicLect
           errorType.includes("api_key") || // Generic
           errorStatus === 401 || errorStatus === 403 || errorStatus === 429 || // Standard HTTP codes
           (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) || // For Gemini key errors specifically
-          (e.response && e.response.data && e.response.data.error && /api key/i.test(e.response.data.error.message)); // Check response body if available
+          (e.response && e.response.data && e.response.data.error && /api key/i.test(e.response.data.error.message));
 
         if (!isKeyError) {
           throw e; // Not a key-related error, re-throw
         }
-        // Log the key-related error and continue to the next attempt or fallback.
         console.log(`User's ${attempt.providerName} API key failed due to key-related issue. Attempting next fallback.`);
       }
     }
   }
 
-  // Fallback to platform's default key if user keys are not provided or fail
   console.log("Falling back to platform's default API key for lecture generation.");
   const { output } = await topicLectureGlobalPlatformPrompt(promptData);
   llmResponse = output;

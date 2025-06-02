@@ -62,18 +62,17 @@ Document Content:
 `;
 
 const QUIZ_GENERATION_PROMPT_CONFIG_BASE = {
-  name: 'quizGenerationPrompt',
+  name: 'quizGenerationPromptBase', // Renamed for clarity
   input: { schema: PromptDataTypeSchema },
   output: { schema: QuizGenerationOutputSchema },
   prompt: QUIZ_GENERATION_PROMPT_TEMPLATE_FOR_DEFINE_PROMPT_HANDLEBARS,
   config: { model: 'googleai/gemini-2.0-flash' }, // Default model for the base config
 };
 
-// Define the global platform prompt using ai.definePrompt for consistency
+// Define the global platform prompt using ai.definePrompt for consistency and proper model config
 const quizGenerationGlobalPlatformPrompt = ai.definePrompt({
-  ...QUIZ_GENERATION_PROMPT_CONFIG_BASE,
+  ...QUIZ_GENERATION_PROMPT_CONFIG_BASE, // Spreads input, output, prompt, AND config.model
   name: 'quizGenerationGlobalPlatformPrompt', // Unique name for the platform-specific prompt instance
-  // The model is inherited from QUIZ_GENERATION_PROMPT_CONFIG_BASE.config
 });
 
 
@@ -102,11 +101,11 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
         });
 
         const tempPrompt = tempAi.definePrompt({
-          ...QUIZ_GENERATION_PROMPT_CONFIG_BASE, // Uses the Handlebars template and input/output schemas
+          ...QUIZ_GENERATION_PROMPT_CONFIG_BASE,
           name: `${QUIZ_GENERATION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
           config: { model: attempt.modelName }, // Override model for user key
         });
-        
+
         const { output } = await tempPrompt(promptData);
         llmResponse = output;
 
@@ -115,6 +114,7 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
         }
         if (llmResponse.questions.length !== input.numQuestions || llmResponse.correctAnswers.length !== input.numQuestions) {
             console.warn(`Model (${attempt.providerName}) returned ${llmResponse.questions.length} questions and ${llmResponse.correctAnswers.length} answers, but ${input.numQuestions} were requested.`);
+            // Adjust to what was actually generated if counts mismatch, but this is often a sign the model didn't follow instructions perfectly.
         }
 
         console.log(`Successfully used user-provided ${attempt.providerName} API key. Generated ${llmResponse.questions.length} questions.`);
@@ -137,7 +137,7 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
           (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) ||
           (e.response && e.response.data && e.response.data.error && /api key/i.test(e.response.data.error.message));
 
-        if (!isKeyError) throw e;
+        if (!isKeyError) throw e; // Not a key-related error, re-throw it
         console.log(`User's ${attempt.providerName} API key failed. Attempting next fallback.`);
       }
     }
@@ -145,7 +145,6 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
 
   console.log("Falling back to platform's default API key for quiz generation using defined prompt.");
   try {
-    // Call the globally defined platform prompt
     const { output } = await quizGenerationGlobalPlatformPrompt(promptData);
     llmResponse = output;
 

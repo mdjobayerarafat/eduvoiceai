@@ -5,10 +5,15 @@ import {googleAI} from '@genkit-ai/googleai';
 
 export const ai = genkit({
   plugins: [
-    googleAI(),
+    googleAI({apiKey: process.env.GEMINI_API_KEY}), // Explicitly pass API key
     // genkitNextPlugin() // Temporarily remove
   ],
-  // Remove model from global config, it's better to specify per-prompt or per-generate call
-  // model: 'googleai/gemini-2.0-flash', 
+  // Model should be specified per-prompt or per-generate call,
+  // but ensuring the plugin is configured with a key is vital.
 });
 
+if (!process.env.GEMINI_API_KEY) {
+  console.warn(
+    'GEMINI_API_KEY is not set in the environment. Genkit Google AI plugin may not function correctly.'
+  );
+}
