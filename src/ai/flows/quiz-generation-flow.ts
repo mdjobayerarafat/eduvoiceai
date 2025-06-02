@@ -1,10 +1,10 @@
 
 'use server';
 /**
- * @fileOverview Generates quiz questions from a PDF document.
+ * @fileOverview Generates quiz questions and their correct answers from a PDF document.
  * Implements a cascading API key fallback: User Gemini -> Platform Default.
  *
- * - generateQuizQuestions - A function that generates quiz questions.
+ * - generateQuizQuestions - A function that generates quiz questions and answers.
  * - QuizGenerationInput - The input type for the function.
  * - QuizGenerationOutput - The return type for the function.
  */
@@ -26,17 +26,16 @@ const QuizGenerationInputSchema = z.object({
     .max(50)
     .describe('The number of questions to generate for the quiz (e.g., 10, 20, 30, 40, 50).'),
   geminiApiKey: z.string().optional().describe('Optional Google Gemini API key to use for this request.'),
-  // openaiApiKey and claudeApiKey can be added later if support is extended
 });
 export type QuizGenerationInput = z.infer<typeof QuizGenerationInputSchema>;
 
 const QuizGenerationOutputSchema = z.object({
   questions: z.array(z.string()).describe('An array of generated quiz questions based on the provided PDF content.'),
+  correctAnswers: z.array(z.string()).describe('An array of correct answers corresponding to the generated questions, derived from the PDF content.'),
   extractedTopicGuess: z.string().optional().describe('A guess of the main topic extracted from the PDF by the AI.'),
 });
 export type QuizGenerationOutput = z.infer<typeof QuizGenerationOutputSchema>;
 
-// Schema for the actual data passed to the prompt template
 const PromptDataTypeSchema = z.object({
     pdfDataUri: z.string(),
     numQuestions: z.number(),
@@ -46,33 +45,34 @@ const QUIZ_GENERATION_PROMPT_CONFIG_BASE = {
   name: 'quizGenerationPrompt',
   input: { schema: PromptDataTypeSchema },
   output: { schema: QuizGenerationOutputSchema },
-  config: { model: 'googleai/gemini-2.0-flash' }, // Default model for the base config
+  config: { model: 'googleai/gemini-2.0-flash' },
   prompt: `You are an AI assistant specializing in creating educational quizzes from PDF documents.
 Analyze the provided PDF document thoroughly. Based on its content, your tasks are:
 1.  Attempt to identify and state the main topic or subject of the document. This will be your 'extractedTopicGuess'.
-2.  Generate a quiz with exactly {{{numQuestions}}} questions.
+2.  Generate a quiz with exactly {{{numQuestions}}} questions. For each question, you MUST also provide the correct answer based *solely* on the information present in the PDF document.
 
 The questions should be:
 - Clear and unambiguous.
 - Directly relevant to the core concepts, facts, and information presented in the document.
 - Varied in how they probe understanding (e.g., definitions, implications, comparisons, processes described in the text).
-- For now, just generate the question text itself. We will handle answer types (multiple-choice, true/false, short answer) in a later stage.
-- Assume each question is for a standard exam level.
+
+The answers should be:
+- Concise and factual, directly extracted or inferred from the PDF.
+- Corresponding to the question generated.
 
 PDF Content:
 {{media url=pdfDataUri}}
 
-Respond strictly in the specified JSON output format. Ensure you provide exactly {{{numQuestions}}} strings in the 'questions' array.
+Respond strictly in the specified JSON output format. Ensure you provide arrays for 'questions' and 'correctAnswers', and that these arrays are of the same length ({{{numQuestions}}}).
 `,
 };
 
-// Define the global platform prompt with an explicit model config
 const quizGenerationGlobalPlatformPrompt = ai.definePrompt({
-  name: 'quizGenerationPromptGlobalPlatform', // Ensure unique name for clarity
+  name: 'quizGenerationPromptGlobalPlatform',
   input: QUIZ_GENERATION_PROMPT_CONFIG_BASE.input,
   output: QUIZ_GENERATION_PROMPT_CONFIG_BASE.output,
   prompt: QUIZ_GENERATION_PROMPT_CONFIG_BASE.prompt,
-  config: { model: 'googleai/gemini-2.0-flash' }, // Explicitly set model for this specific prompt instance
+  config: { model: 'googleai/gemini-2.0-flash' },
 });
 
 
@@ -88,28 +88,38 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
       providerName: 'Gemini',
       apiKey: input.geminiApiKey,
       plugin: googleAI,
-      modelName: 'googleai/gemini-2.0-flash', // or gemini-1.5-flash, gemini-pro for potentially better quality
+      modelName: 'googleai/gemini-2.0-flash',
     },
   ];
 
   for (const attempt of attempts) {
     if (attempt.apiKey && attempt.plugin) {
-      console.log(`Attempting to use user-provided ${attempt.providerName} API key for quiz generation.`);
+      console.log(`Attempting to use user-provided ${attempt.providerName} API key for quiz generation with model ${attempt.modelName}.`);
       try {
         const tempAi = baseGenkit({
           plugins: [attempt.plugin({ apiKey: attempt.apiKey })],
         });
         const tempPrompt = tempAi.definePrompt({
-          ...QUIZ_GENERATION_PROMPT_CONFIG_BASE, // Spreads the base, including its default model
+          ...QUIZ_GENERATION_PROMPT_CONFIG_BASE,
           name: `${QUIZ_GENERATION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
-          config: { model: attempt.modelName }, // Overrides the model with the user's preferred one
+          // config will be overridden by explicit model in call options if needed,
+          // but good to have a base modelName from attempt here.
+          config: { model: attempt.modelName },
         });
-
-        const { output } = await tempPrompt(promptData);
+        
+        // Explicitly pass model in options for tempPrompt
+        const { output } = await tempPrompt(promptData, { model: attempt.modelName });
         llmResponse = output;
-        if (!llmResponse || !llmResponse.questions) throw new Error(`Model (${attempt.providerName}) returned no questions or invalid output.`);
 
-        console.log(`Successfully used user-provided ${attempt.providerName} API key for quiz generation. Generated ${llmResponse.questions.length} questions.`);
+        if (!llmResponse || !llmResponse.questions || !llmResponse.correctAnswers) {
+            throw new Error(`Model (${attempt.providerName}) returned invalid output (missing questions or answers).`);
+        }
+        if (llmResponse.questions.length !== input.numQuestions || llmResponse.correctAnswers.length !== input.numQuestions) {
+            console.warn(`Model (${attempt.providerName}) returned ${llmResponse.questions.length} questions and ${llmResponse.correctAnswers.length} answers, but ${input.numQuestions} were requested.`);
+            // Allow to proceed if some questions/answers are returned, even if not exact count
+        }
+
+        console.log(`Successfully used user-provided ${attempt.providerName} API key. Generated ${llmResponse.questions.length} questions.`);
         return llmResponse;
       } catch (e: any) {
         console.warn(`Error using user-provided ${attempt.providerName} API key for quiz generation:`, e.message);
@@ -136,12 +146,19 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
   }
 
   console.log("Falling back to platform's default API key for quiz generation.");
-  // Use the explicitly configured global platform prompt
-  const { output } = await quizGenerationGlobalPlatformPrompt(promptData);
+  // Explicitly pass model in options for quizGenerationGlobalPlatformPrompt
+  const { output } = await quizGenerationGlobalPlatformPrompt(
+    promptData,
+    { model: 'googleai/gemini-2.0-flash' } 
+  );
   llmResponse = output;
 
-  if (!llmResponse || !llmResponse.questions) {
-    throw new Error("The AI model did not return the expected questions after all attempts.");
+  if (!llmResponse || !llmResponse.questions || !llmResponse.correctAnswers) {
+    throw new Error("The AI model did not return the expected questions and answers after all attempts.");
+  }
+  if (llmResponse.questions.length !== input.numQuestions || llmResponse.correctAnswers.length !== input.numQuestions) {
+     console.warn(`Platform model returned ${llmResponse.questions.length} questions and ${llmResponse.correctAnswers.length} answers, but ${input.numQuestions} were requested.`);
+     // Allow to proceed
   }
   console.log(`Generated ${llmResponse.questions.length} questions using platform key. Topic guess: ${llmResponse.extractedTopicGuess}`);
   return llmResponse;

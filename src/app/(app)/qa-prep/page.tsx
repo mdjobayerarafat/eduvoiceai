@@ -79,6 +79,7 @@ export default function QAPrepPage() {
   const [quizReady, setQuizReady] = useState(false);
   const [currentQuizReport, setCurrentQuizReport] = useState<QAReport | null>(null);
   const [generatedQuestionsForDisplay, setGeneratedQuestionsForDisplay] = useState<string[]>([]);
+  const [generatedAnswersForDisplay, setGeneratedAnswersForDisplay] = useState<string[]>([]);
 
 
   const form = useForm<QAPrepFormValues>({
@@ -96,6 +97,7 @@ export default function QAPrepPage() {
     setQuizReady(false);
     setCurrentQuizReport(null);
     setGeneratedQuestionsForDisplay([]);
+    setGeneratedAnswersForDisplay([]);
 
     let currentUser: Models.User<Models.Preferences>;
     try {
@@ -181,11 +183,16 @@ export default function QAPrepPage() {
 
     try {
       const generatedQuizOutput: QuizGenerationOutput = await generateQuizQuestions(quizInput);
-      if (!generatedQuizOutput || !generatedQuizOutput.questions || generatedQuizOutput.questions.length === 0) {
-        throw new Error("The AI did not return any questions. The PDF might be empty, unreadable, or the topic too narrow.");
+      if (!generatedQuizOutput || !generatedQuizOutput.questions || generatedQuizOutput.questions.length === 0 || !generatedQuizOutput.correctAnswers || generatedQuizOutput.correctAnswers.length === 0) {
+        throw new Error("The AI did not return any questions or answers. The PDF might be empty, unreadable, or the topic too narrow.");
+      }
+      if (generatedQuizOutput.questions.length !== generatedQuizOutput.correctAnswers.length) {
+        console.warn("Mismatch between number of generated questions and answers. AI might have had an issue. Proceeding with available data.");
+        // Potentially truncate to the shorter length or handle as an error
       }
       
       setGeneratedQuestionsForDisplay(generatedQuizOutput.questions); 
+      setGeneratedAnswersForDisplay(generatedQuizOutput.correctAnswers);
 
       if (!APPWRITE_DATABASE_ID || !QA_REPORTS_COLLECTION_ID) {
         throw new Error("Appwrite DB/Collection ID for QA reports is not configured.");
@@ -194,12 +201,13 @@ export default function QAPrepPage() {
       const quizReportDataToSave: Omit<QAReport, keyof Models.Document | '$permissions' | '$databaseId' | '$collectionId'> = {
         userId: userId,
         pdfFileName: pdfFile.name,
-        pdfDataUri: pdfDataUri, // Save the PDF Data URI
+        pdfDataUri: pdfDataUri, 
         quizTitle: generatedQuizOutput.extractedTopicGuess || `Quiz from ${pdfFile.name}`,
         numQuestionsSet: numQuestionsSelected,
         numQuestionsGenerated: generatedQuizOutput.questions.length,
         durationMinutes: durationSelected,
         generatedQuestions: JSON.stringify(generatedQuizOutput.questions),
+        generatedCorrectAnswers: JSON.stringify(generatedQuizOutput.correctAnswers), // Save correct answers
         status: "generated",
       };
 
@@ -221,7 +229,7 @@ export default function QAPrepPage() {
 
       toast({
         title: "Quiz Generated & Saved!",
-        description: `${generatedQuizOutput.questions.length} questions generated for "${pdfFile.name}" and saved. Ready to start.`,
+        description: `${generatedQuizOutput.questions.length} questions and answers generated for "${pdfFile.name}" and saved. Ready to start.`,
       });
 
     } catch (err) {
@@ -244,6 +252,7 @@ export default function QAPrepPage() {
     setCurrentQuizReport(null);
     setError(null);
     setGeneratedQuestionsForDisplay([]);
+    setGeneratedAnswersForDisplay([]);
   };
 
   return (
@@ -254,7 +263,7 @@ export default function QAPrepPage() {
             <HelpCircle className="mr-3 h-8 w-8 text-primary" /> AI-Powered Q&A Prep
           </h1>
           <p className="text-muted-foreground mt-1">
-            Upload a PDF, select settings, and let AI generate a quiz. Then, take the exam!
+            Upload a PDF, select settings, and let AI generate a quiz with questions and correct answers. Then, take the exam!
           </p>
         </div>
         {!quizReady && (
@@ -360,7 +369,7 @@ export default function QAPrepPage() {
                   {isLoading ? (
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Quiz...</>
                   ) : (
-                    <><Sparkles className="mr-2 h-4 w-4" /> Generate Quiz</>
+                    <><Sparkles className="mr-2 h-4 w-4" /> Generate Quiz & Answers</>
                   )}
                 </Button>
               </form>
@@ -395,13 +404,27 @@ export default function QAPrepPage() {
                 <RotateCcw className="mr-2 h-4 w-4" /> Generate New Quiz
               </Button>
             </div>
-             {generatedQuestionsForDisplay.length > 0 && (
+             {(generatedQuestionsForDisplay.length > 0 || generatedAnswersForDisplay.length > 0) && (
                 <div className="mt-4 pt-4 border-t">
-                    <h3 className="font-semibold mb-2 text-sm text-muted-foreground">Generated Questions (Preview):</h3>
-                    <ul className="space-y-1 list-decimal list-inside pl-4 max-h-60 overflow-y-auto text-xs">
-                        {generatedQuestionsForDisplay.slice(0, 5).map((q, i) => <li key={i} className="truncate">{q}</li>)}
-                        {generatedQuestionsForDisplay.length > 5 && <li>...and {generatedQuestionsForDisplay.length - 5} more.</li>}
-                    </ul>
+                    <h3 className="font-semibold mb-2 text-sm text-muted-foreground">Generated Content (Preview):</h3>
+                    {generatedQuestionsForDisplay.length > 0 && (
+                        <>
+                        <p className="text-xs font-medium">Questions:</p>
+                        <ul className="space-y-1 list-decimal list-inside pl-4 max-h-32 overflow-y-auto text-xs">
+                            {generatedQuestionsForDisplay.slice(0, 3).map((q, i) => <li key={`q-${i}`} className="truncate">{q}</li>)}
+                            {generatedQuestionsForDisplay.length > 3 && <li>...and {generatedQuestionsForDisplay.length - 3} more.</li>}
+                        </ul>
+                        </>
+                    )}
+                    {generatedAnswersForDisplay.length > 0 && (
+                         <>
+                        <p className="text-xs font-medium mt-2">Correct Answers:</p>
+                        <ul className="space-y-1 list-decimal list-inside pl-4 max-h-32 overflow-y-auto text-xs">
+                            {generatedAnswersForDisplay.slice(0, 3).map((a, i) => <li key={`a-${i}`} className="truncate">{a}</li>)}
+                            {generatedAnswersForDisplay.length > 3 && <li>...and {generatedAnswersForDisplay.length - 3} more.</li>}
+                        </ul>
+                        </>
+                    )}
                 </div>
             )}
           </CardContent>
@@ -420,15 +443,11 @@ export default function QAPrepPage() {
         <CardContent className="text-sm text-muted-foreground space-y-2">
             <p>This feature saves generated quizzes to the <strong>qa_reports</strong> collection. The schema includes attributes like:</p>
             <ul className="list-disc pl-5 space-y-1 text-xs">
-                <li>`userId`, `pdfFileName`, `pdfDataUri`, `quizTitle`, `numQuestionsSet`, `numQuestionsGenerated`, `durationMinutes`, `generatedQuestions` (JSON string), `status`.</li>
+                <li>`userId`, `pdfFileName`, `pdfDataUri`, `quizTitle`, `numQuestionsSet`, `numQuestionsGenerated`, `durationMinutes`, `generatedQuestions` (JSON string), `generatedCorrectAnswers` (JSON string), `status`.</li>
                 <li>After exam completion: `overallScore`, `maxScore`, `overallFeedback`, `userAnswersAndFeedback` (JSON string), `startedAt`, `completedAt`.</li>
             </ul>
-             <p className="text-xs text-destructive mt-2">
-              Next steps: Implement the exam taking interface, timer, answer submission, AI evaluation, and detailed report display.
-            </p>
         </CardContent>
       </Card>
     </div>
   );
 }
-
