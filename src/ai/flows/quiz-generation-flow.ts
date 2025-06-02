@@ -45,8 +45,7 @@ const QUIZ_GENERATION_PROMPT_CONFIG_BASE = {
   name: 'quizGenerationPrompt',
   input: { schema: PromptDataTypeSchema },
   output: { schema: QuizGenerationOutputSchema },
-  // Ensure a default model is part of the base configuration
-  config: { model: 'googleai/gemini-2.0-flash' }, 
+  config: { model: 'googleai/gemini-2.0-flash' }, // Default model specified here for base
   prompt: `You are an AI assistant specializing in creating educational quizzes from PDF documents.
 Analyze the provided PDF document thoroughly. Based on its content, your tasks are:
 1.  Attempt to identify and state the main topic or subject of the document. This will be your 'extractedTopicGuess'.
@@ -68,13 +67,13 @@ Respond strictly in the specified JSON output format. Ensure you provide arrays 
 `,
 };
 
-// This prompt will use the model defined in QUIZ_GENERATION_PROMPT_CONFIG_BASE.config
+// Define the global platform prompt with its own explicit configuration
 const quizGenerationGlobalPlatformPrompt = ai.definePrompt({
-  name: 'quizGenerationPromptGlobalPlatform', // Ensure unique name
-  input: QUIZ_GENERATION_PROMPT_CONFIG_BASE.input,
-  output: QUIZ_GENERATION_PROMPT_CONFIG_BASE.output,
-  prompt: QUIZ_GENERATION_PROMPT_CONFIG_BASE.prompt,
-  config: QUIZ_GENERATION_PROMPT_CONFIG_BASE.config, // Inherit config, including model
+  name: 'quizGenerationPromptGlobalPlatform', // Unique name for this specific prompt instance
+  input: PromptDataTypeSchema, // Use the schema directly
+  output: QuizGenerationOutputSchema, // Use the schema directly
+  prompt: QUIZ_GENERATION_PROMPT_CONFIG_BASE.prompt, // Use the prompt text from base
+  config: { model: 'googleai/gemini-2.0-flash' }, // Explicitly define the model for this platform prompt
 });
 
 
@@ -90,7 +89,7 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
       providerName: 'Gemini',
       apiKey: input.geminiApiKey,
       plugin: googleAI,
-      modelName: 'googleai/gemini-2.0-flash', // Default model for Gemini if user provides key
+      modelName: 'googleai/gemini-2.0-flash', 
     },
   ];
 
@@ -101,17 +100,16 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
         const tempAi = baseGenkit({
           plugins: [attempt.plugin({ apiKey: attempt.apiKey })],
         });
-        // Define the tempPrompt with the specific model from the attempt
+        
         const tempPrompt = tempAi.definePrompt({
-          ...QUIZ_GENERATION_PROMPT_CONFIG_BASE, // Spreads input, output, prompt text, and base config
-          name: `${QUIZ_GENERATION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
-          config: { // Override base config specifically for model
-            ...QUIZ_GENERATION_PROMPT_CONFIG_BASE.config, // Bring other base configs like temperature if any
-            model: attempt.modelName, // Set the specific model for this attempt
+          ...QUIZ_GENERATION_PROMPT_CONFIG_BASE, // Spread base for input, output, prompt text
+          name: `${QUIZ_GENERATION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`, // Unique name
+          config: { // Explicitly set config for this temp prompt
+            ...QUIZ_GENERATION_PROMPT_CONFIG_BASE.config, // Inherit other config if any
+            model: attempt.modelName, // Override model
           },
         });
         
-        // Call tempPrompt without passing model in options, as it's now part of its definition
         const { output } = await tempPrompt(promptData); 
         llmResponse = output;
 
@@ -139,17 +137,17 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
           errorMessage.includes("insufficient_quota") ||
           errorType.includes("api_key") ||
           errorStatus === 401 || errorStatus === 403 || errorStatus === 429 ||
-          (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) || // Gemini permission denied
+          (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) || 
           (e.response && e.response.data && e.response.data.error && /api key/i.test(e.response.data.error.message));
 
-        if (!isKeyError) throw e; // If it's not a key error, re-throw it to be caught by the main try-catch in onSubmit
+        if (!isKeyError) throw e; 
         console.log(`User's ${attempt.providerName} API key failed. Attempting next fallback.`);
       }
     }
   }
 
   console.log("Falling back to platform's default API key for quiz generation.");
-  // Call quizGenerationGlobalPlatformPrompt without passing model in options, as it's part of its definition
+  // Call quizGenerationGlobalPlatformPrompt, relying on its defined config.
   const { output } = await quizGenerationGlobalPlatformPrompt(promptData); 
   llmResponse = output;
 
@@ -175,3 +173,4 @@ const quizGenerationFlow = ai.defineFlow(
 export async function generateQuizQuestions(input: QuizGenerationInput): Promise<QuizGenerationOutput> {
   return quizGenerationFlow(input);
 }
+
