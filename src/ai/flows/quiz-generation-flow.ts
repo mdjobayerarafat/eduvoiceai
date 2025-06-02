@@ -69,11 +69,11 @@ Respond strictly in the specified JSON output format. Ensure you provide arrays 
 
 // Define the global platform prompt with its own explicit configuration
 const quizGenerationGlobalPlatformPrompt = ai.definePrompt({
-  name: 'quizGenerationPromptGlobalPlatform', // Unique name for this specific prompt instance
-  input: PromptDataTypeSchema, // Use the schema directly
-  output: QuizGenerationOutputSchema, // Use the schema directly
-  prompt: QUIZ_GENERATION_PROMPT_CONFIG_BASE.prompt, // Use the prompt text from base
-  config: { model: 'googleai/gemini-2.0-flash' }, // Explicitly define the model for this platform prompt
+  name: 'quizGenerationPromptGlobalPlatform',
+  input: { schema: PromptDataTypeSchema }, // Corrected: Use object with schema key
+  output: { schema: QuizGenerationOutputSchema }, // Corrected: Use object with schema key
+  prompt: QUIZ_GENERATION_PROMPT_CONFIG_BASE.prompt,
+  config: { model: 'googleai/gemini-2.0-flash' },
 });
 
 
@@ -89,7 +89,7 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
       providerName: 'Gemini',
       apiKey: input.geminiApiKey,
       plugin: googleAI,
-      modelName: 'googleai/gemini-2.0-flash', 
+      modelName: 'googleai/gemini-2.0-flash',
     },
   ];
 
@@ -102,15 +102,15 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
         });
         
         const tempPrompt = tempAi.definePrompt({
-          ...QUIZ_GENERATION_PROMPT_CONFIG_BASE, // Spread base for input, output, prompt text
-          name: `${QUIZ_GENERATION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`, // Unique name
-          config: { // Explicitly set config for this temp prompt
-            ...QUIZ_GENERATION_PROMPT_CONFIG_BASE.config, // Inherit other config if any
-            model: attempt.modelName, // Override model
+          ...QUIZ_GENERATION_PROMPT_CONFIG_BASE,
+          name: `${QUIZ_GENERATION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
+          config: {
+            ...QUIZ_GENERATION_PROMPT_CONFIG_BASE.config,
+            model: attempt.modelName,
           },
         });
         
-        const { output } = await tempPrompt(promptData); 
+        const { output } = await tempPrompt(promptData);
         llmResponse = output;
 
         if (!llmResponse || !llmResponse.questions || !llmResponse.correctAnswers) {
@@ -147,7 +147,6 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
   }
 
   console.log("Falling back to platform's default API key for quiz generation.");
-  // Call quizGenerationGlobalPlatformPrompt, relying on its defined config.
   const { output } = await quizGenerationGlobalPlatformPrompt(promptData); 
   llmResponse = output;
 
