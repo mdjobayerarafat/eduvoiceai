@@ -94,14 +94,13 @@ export default function ExamPage() {
         const newRemainingTime = Math.max(0, initialDurationSeconds - elapsedSeconds);
         setRemainingTime(newRemainingTime);
         if (newRemainingTime <=0) {
-            handleFinishExam("timer_expired_on_load"); // Call handleFinishExam, which is defined below
+            handleFinishExam("timer_expired_on_load");
             return;
         }
       } else {
         setRemainingTime(fetchedReport.durationMinutes * 60);
       }
 
-      // If status was 'generated' or 'error_evaluating', update it to 'in_progress' and set/reset startedAt
       if (fetchedReport.status === "generated" || fetchedReport.status === "error_evaluating") {
         const newStartedAt = new Date().toISOString();
         await databases.updateDocument(APPWRITE_DATABASE_ID, QA_REPORTS_COLLECTION_ID, reportId, {
@@ -133,7 +132,7 @@ export default function ExamPage() {
       setIsLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportId, router, toast]); // handleFinishExam is memoized with useCallback, so it's stable unless its own dependencies change
+  }, [reportId, router, toast]); 
 
   useEffect(() => {
     loadExamData();
@@ -149,14 +148,14 @@ export default function ExamPage() {
         if (prevTime === null) return null;
         if (prevTime <= 1) {
           clearInterval(timerRef.current!);
-          handleFinishExam("timer_expired"); // Call handleFinishExam here
+          handleFinishExam("timer_expired");
           return 0;
         }
         return prevTime - 1;
       });
     }, 1000);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remainingTime, examCompleted, isLoading, report?.status]); // handleFinishExam is memoized
+  }, [remainingTime, examCompleted, isLoading, report?.status]); 
 
   useEffect(() => {
     if (remainingTime !== null && remainingTime > 0 && !isLoading && !examCompleted && report?.status === "in_progress") {
@@ -204,21 +203,26 @@ export default function ExamPage() {
         questions: questions,
         userAnswers: answersArray,
       };
+      console.log("ExamPage: Sending to evaluateQuiz:", JSON.stringify(evaluationInput, null, 2));
       const evaluationData = await evaluateQuiz(evaluationInput); 
+      console.log("ExamPage: Evaluation data from evaluateQuiz:", JSON.stringify(evaluationData, null, 2));
       
       if (!evaluationData || typeof evaluationData.overallScore !== 'number') {
         throw new Error("AI evaluation returned invalid or empty data. Please try submitting again.");
       }
       setEvaluationResult(evaluationData);
 
-      const submissionResponse = await fetch('/api/qa-prep/submit-evaluation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const apiPayload = {
           reportId: reportId,
           evaluationData: evaluationData, 
           userAnswers: answersArray,
-        }),
+      };
+      console.log("ExamPage: Payload to submit-evaluation API:", JSON.stringify(apiPayload, null, 2));
+
+      const submissionResponse = await fetch('/api/qa-prep/submit-evaluation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(apiPayload),
       });
 
       const submissionResultText = await submissionResponse.text();
@@ -250,7 +254,6 @@ export default function ExamPage() {
       console.error("Error finishing exam (client-side):", err);
       setError(`Failed to submit or evaluate exam: ${err.message}`);
       toast({ title: "Submission Error", description: err.message, variant: "destructive" });
-      // Do not set status to "error_evaluating" here; let the backend or next load handle it if needed.
     } finally {
       setIsSubmitting(false);
     }
