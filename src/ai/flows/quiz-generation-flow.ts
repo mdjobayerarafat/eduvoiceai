@@ -44,9 +44,9 @@ const PromptDataTypeSchema = z.object({
 
 const QUIZ_GENERATION_PROMPT_CONFIG_BASE = {
   name: 'quizGenerationPrompt',
-  input: { schema: PromptDataTypeSchema }, 
+  input: { schema: PromptDataTypeSchema },
   output: { schema: QuizGenerationOutputSchema },
-  config: { model: 'googleai/gemini-2.0-flash' }, // Added default model
+  config: { model: 'googleai/gemini-2.0-flash' }, // Default model for the base config
   prompt: `You are an AI assistant specializing in creating educational quizzes from PDF documents.
 Analyze the provided PDF document thoroughly. Based on its content, your tasks are:
 1.  Attempt to identify and state the main topic or subject of the document. This will be your 'extractedTopicGuess'.
@@ -66,11 +66,19 @@ Respond strictly in the specified JSON output format. Ensure you provide exactly
 `,
 };
 
-const quizGenerationGlobalPlatformPrompt = ai.definePrompt(QUIZ_GENERATION_PROMPT_CONFIG_BASE);
+// Define the global platform prompt with an explicit model config
+const quizGenerationGlobalPlatformPrompt = ai.definePrompt({
+  name: 'quizGenerationPromptGlobalPlatform', // Ensure unique name for clarity
+  input: QUIZ_GENERATION_PROMPT_CONFIG_BASE.input,
+  output: QUIZ_GENERATION_PROMPT_CONFIG_BASE.output,
+  prompt: QUIZ_GENERATION_PROMPT_CONFIG_BASE.prompt,
+  config: { model: 'googleai/gemini-2.0-flash' }, // Explicitly set model for this specific prompt instance
+});
+
 
 async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenerationOutput> {
   let llmResponse: QuizGenerationOutput | undefined;
-  const promptData: z.infer<typeof PromptDataTypeSchema> = { 
+  const promptData: z.infer<typeof PromptDataTypeSchema> = {
     pdfDataUri: input.pdfDataUri,
     numQuestions: input.numQuestions,
   };
@@ -92,15 +100,15 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
           plugins: [attempt.plugin({ apiKey: attempt.apiKey })],
         });
         const tempPrompt = tempAi.definePrompt({
-          ...QUIZ_GENERATION_PROMPT_CONFIG_BASE,
+          ...QUIZ_GENERATION_PROMPT_CONFIG_BASE, // Spreads the base, including its default model
           name: `${QUIZ_GENERATION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
-          config: { model: attempt.modelName }, // This overrides the base config's model
+          config: { model: attempt.modelName }, // Overrides the model with the user's preferred one
         });
 
         const { output } = await tempPrompt(promptData);
         llmResponse = output;
         if (!llmResponse || !llmResponse.questions) throw new Error(`Model (${attempt.providerName}) returned no questions or invalid output.`);
-        
+
         console.log(`Successfully used user-provided ${attempt.providerName} API key for quiz generation. Generated ${llmResponse.questions.length} questions.`);
         return llmResponse;
       } catch (e: any) {
@@ -128,6 +136,7 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
   }
 
   console.log("Falling back to platform's default API key for quiz generation.");
+  // Use the explicitly configured global platform prompt
   const { output } = await quizGenerationGlobalPlatformPrompt(promptData);
   llmResponse = output;
 
@@ -141,7 +150,7 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
 const quizGenerationFlow = ai.defineFlow(
   {
     name: 'quizGenerationFlow',
-    inputSchema: QuizGenerationInputSchema, 
+    inputSchema: QuizGenerationInputSchema,
     outputSchema: QuizGenerationOutputSchema,
   },
   generateQuizLogic
@@ -150,5 +159,3 @@ const quizGenerationFlow = ai.defineFlow(
 export async function generateQuizQuestions(input: QuizGenerationInput): Promise<QuizGenerationOutput> {
   return quizGenerationFlow(input);
 }
-
-    
