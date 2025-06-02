@@ -9,6 +9,7 @@ export const ai = genkit({
     // genkitNextPlugin() // Temporarily remove
   ],
   // Model should be specified per-prompt or per-generate call,
+  model: 'googleai/gemini-2.0-flash',
   // but ensuring the plugin is configured with a key is vital.
 });
 
