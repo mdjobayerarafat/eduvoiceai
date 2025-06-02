@@ -36,6 +36,7 @@ import type { QuizGenerationInput, QuizGenerationOutput } from "@/ai/flows/quiz-
 import type { QAReport } from "@/types/qaReport";
 
 const QA_PREP_TOKEN_COST_PER_QUESTION = 100;
+const PDF_MAX_SIZE_MB = 2; // Reduced from 10MB to 2MB
 
 const qaPrepFormSchema = z.object({
   pdfFile: z
@@ -43,8 +44,8 @@ const qaPrepFormSchema = z.object({
     .refine((files) => files.length > 0, `PDF file is required.`)
     .refine((files) => files.length <= 1, `Only one PDF file can be uploaded.`)
     .refine(
-      (files) => files.length === 0 || files[0].size <= 10 * 1024 * 1024, // 10MB limit
-      `PDF file size must be less than 10MB.`
+      (files) => files.length === 0 || files[0].size <= PDF_MAX_SIZE_MB * 1024 * 1024,
+      `PDF file size must be less than ${PDF_MAX_SIZE_MB}MB.`
     )
     .refine(
       (files) => files.length === 0 || files[0].type === "application/pdf",
@@ -184,11 +185,10 @@ export default function QAPrepPage() {
     try {
       const generatedQuizOutput: QuizGenerationOutput = await generateQuizQuestions(quizInput);
       if (!generatedQuizOutput || !generatedQuizOutput.questions || generatedQuizOutput.questions.length === 0 || !generatedQuizOutput.correctAnswers || generatedQuizOutput.correctAnswers.length === 0) {
-        throw new Error("The AI did not return any questions or answers. The PDF might be empty, unreadable, or the topic too narrow.");
+        throw new Error("The AI did not return any questions or answers. The PDF might be empty, unreadable, or the topic too narrow. If the AI service is overloaded, please try again later.");
       }
       if (generatedQuizOutput.questions.length !== generatedQuizOutput.correctAnswers.length) {
         console.warn("Mismatch between number of generated questions and answers. AI might have had an issue. Proceeding with available data.");
-        // Potentially truncate to the shorter length or handle as an error
       }
       
       setGeneratedQuestionsForDisplay(generatedQuizOutput.questions); 
@@ -207,7 +207,7 @@ export default function QAPrepPage() {
         numQuestionsGenerated: generatedQuizOutput.questions.length,
         durationMinutes: durationSelected,
         generatedQuestions: JSON.stringify(generatedQuizOutput.questions),
-        generatedCorrectAnswers: JSON.stringify(generatedQuizOutput.correctAnswers), // Save correct answers
+        generatedCorrectAnswers: JSON.stringify(generatedQuizOutput.correctAnswers),
         status: "generated",
       };
 
@@ -238,9 +238,9 @@ export default function QAPrepPage() {
       setError(`Quiz generation/saving failed: ${errorMessage}`);
       toast({
         title: "Quiz Preparation Failed",
-        description: `Could not prepare quiz. ${userGeminiApiKey ? "(Used your Gemini key). " : ""}Details: ${errorMessage.substring(0,150)}...`,
+        description: `Could not prepare quiz. ${userGeminiApiKey ? "(Used your Gemini key). " : ""}Details: ${errorMessage.substring(0,150)}... If the error mentions service overload, please try again in a few moments.`,
         variant: "destructive",
-        duration: 7000,
+        duration: 10000,
       });
     } finally {
       setIsLoading(false);
@@ -289,7 +289,7 @@ export default function QAPrepPage() {
           <CardHeader>
             <CardTitle className="font-headline text-2xl">Generate Your Quiz</CardTitle>
             <CardDescription>
-              Provide a PDF, choose the number of questions and exam duration.
+              Provide a PDF (max {PDF_MAX_SIZE_MB}MB), choose the number of questions and exam duration.
               Cost: {QA_PREP_TOKEN_COST_PER_QUESTION} tokens per question.
             </CardDescription>
           </CardHeader>
@@ -310,7 +310,7 @@ export default function QAPrepPage() {
                           disabled={isLoading}
                         />
                       </FormControl>
-                      <FormDescription>Max 10MB. Ensure the PDF contains selectable text.</FormDescription>
+                      <FormDescription>Max {PDF_MAX_SIZE_MB}MB. Ensure the PDF contains selectable text.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

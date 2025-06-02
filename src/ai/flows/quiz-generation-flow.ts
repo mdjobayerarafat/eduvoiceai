@@ -36,12 +36,35 @@ const QuizGenerationOutputSchema = z.object({
 });
 export type QuizGenerationOutput = z.infer<typeof QuizGenerationOutputSchema>;
 
+// Input schema for the prompt object (used by ai.definePrompt)
 const PromptDataTypeSchema = z.object({
     pdfDataUri: z.string(),
     numQuestions: z.number(),
 });
 
-const QUIZ_GENERATION_PROMPT_TEXT_TEMPLATE = `You are an AI assistant specializing in creating educational quizzes from PDF documents.
+// Template for use with ai.definePrompt (handles {{media}} and {{{...}}} internally)
+const QUIZ_GENERATION_PROMPT_TEMPLATE_FOR_DEFINE_PROMPT_HANDLEBARS = `You are an AI assistant specializing in creating educational quizzes from PDF documents.
+Analyze the provided PDF document thoroughly. Based on its content, your tasks are:
+1.  Attempt to identify and state the main topic or subject of the document. This will be your 'extractedTopicGuess'.
+2.  Generate a quiz with exactly {{{numQuestions}}} questions. For each question, you MUST also provide the correct answer based *solely* on the information present in the PDF document.
+
+The questions should be:
+- Clear and unambiguous.
+- Directly relevant to the core concepts, facts, and information presented in the document.
+- Varied in how they probe understanding (e.g., definitions, implications, comparisons, processes described in the text).
+
+The answers should be:
+- Concise and factual, directly extracted or inferred from the PDF.
+- Corresponding to the question generated.
+
+Respond strictly in the specified JSON output format. Ensure you provide arrays for 'questions' and 'correctAnswers', and that these arrays are of the same length ({{{numQuestions}}}).
+
+Document Content:
+{{media url=pdfDataUri}}
+`;
+
+// Template for direct ai.generate() calls (PDF passed as separate media part)
+const QUIZ_GENERATION_PROMPT_TEXT_FOR_AI_GENERATE_FALLBACK = `You are an AI assistant specializing in creating educational quizzes from PDF documents.
 Analyze the provided PDF document thoroughly. Based on its content, your tasks are:
 1.  Attempt to identify and state the main topic or subject of the document. This will be your 'extractedTopicGuess'.
 2.  Generate a quiz with exactly {{{numQuestions}}} questions. For each question, you MUST also provide the correct answer based *solely* on the information present in the PDF document.
@@ -60,12 +83,19 @@ Respond strictly in the specified JSON output format. Ensure you provide arrays 
 PDF Content is provided as a separate media part. Do not look for it in this text.
 `;
 
+// Base config (primarily for schema and reference, model specified per-use)
 const QUIZ_GENERATION_PROMPT_CONFIG_BASE = {
   name: 'quizGenerationPrompt',
   input: { schema: PromptDataTypeSchema },
   output: { schema: QuizGenerationOutputSchema },
-  config: { model: 'googleai/gemini-2.0-flash' },
-  prompt: QUIZ_GENERATION_PROMPT_TEXT_TEMPLATE, // Using the template that expects media separately
+  // Model will be specified in definePrompt or generate calls
+};
+
+// Helper for simple string interpolation (used for ai.generate fallback text)
+const handlebarsLikeInterpolate = (template: string, data: Record<string, any>): string => {
+  return template.replace(/{{{?\s*(\w+)\s*}?}}/g, (match, key) => {
+      return data[key] !== undefined ? String(data[key]) : match;
+  });
 };
 
 
@@ -81,7 +111,7 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
       providerName: 'Gemini',
       apiKey: input.geminiApiKey,
       plugin: googleAI,
-      modelName: 'googleai/gemini-2.0-flash',
+      modelName: 'googleai/gemini-2.0-flash', // Default Gemini model for user keys
     },
   ];
 
@@ -92,27 +122,20 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
         const tempAi = baseGenkit({
           plugins: [attempt.plugin({ apiKey: attempt.apiKey })],
         });
-        
-        // Construct the prompt text by interpolating numQuestions
-        const handlebarsLikeInterpolate = (template: string, data: Record<string, any>): string => {
-            return template.replace(/{{{?\s*(\w+)\s*}?}}/g, (match, key) => {
-                return data[key] !== undefined ? String(data[key]) : match;
-            });
-        };
-        const interpolatedPromptText = handlebarsLikeInterpolate(QUIZ_GENERATION_PROMPT_TEXT_TEMPLATE, { numQuestions: promptData.numQuestions });
 
         const tempPrompt = tempAi.definePrompt({
           name: `${QUIZ_GENERATION_PROMPT_CONFIG_BASE.name}_user${attempt.providerName}_${Date.now()}`,
-          input: { schema: z.object({ pdfDataUri: z.string() }) }, // Input for the prompt is just the URI
+          input: { schema: PromptDataTypeSchema }, // Full schema with pdfDataUri and numQuestions
           output: { schema: QuizGenerationOutputSchema },
-          prompt: `${interpolatedPromptText}\n\n{{media url=pdfDataUri}}`, // The prompt text now uses the media helper
+          prompt: QUIZ_GENERATION_PROMPT_TEMPLATE_FOR_DEFINE_PROMPT_HANDLEBARS, // Use Handlebars template for Genkit to process
           config: {
-            model: attempt.modelName,
+            model: attempt.modelName, // Model specified here
           },
         });
-        
-        // Call tempPrompt with only the pdfDataUri, as numQuestions is already in the prompt text
-        const { output } = await tempPrompt({ pdfDataUri: promptData.pdfDataUri });
+
+        // Call tempPrompt with the full promptData object.
+        // Genkit will use Handlebars to interpolate {{{numQuestions}}} and {{media url=pdfDataUri}}
+        const { output } = await tempPrompt(promptData);
         llmResponse = output;
 
         if (!llmResponse || !llmResponse.questions || !llmResponse.correctAnswers) {
@@ -139,10 +162,10 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
           errorMessage.includes("insufficient_quota") ||
           errorType.includes("api_key") ||
           errorStatus === 401 || errorStatus === 403 || errorStatus === 429 ||
-          (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) || 
+          (e.cause && typeof e.cause === 'object' && 'code' in e.cause && e.cause.code === 7) ||
           (e.response && e.response.data && e.response.data.error && /api key/i.test(e.response.data.error.message));
 
-        if (!isKeyError) throw e; 
+        if (!isKeyError) throw e;
         console.log(`User's ${attempt.providerName} API key failed. Attempting next fallback.`);
       }
     }
@@ -150,26 +173,26 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
 
   console.log("Falling back to platform's default API key for quiz generation using direct ai.generate().");
   try {
-    // Interpolate numQuestions into the base prompt text
-    const handlebarsLikeInterpolate = (template: string, data: Record<string, any>): string => {
-        return template.replace(/{{{?\s*(\w+)\s*}?}}/g, (match, key) => {
-            return data[key] !== undefined ? String(data[key]) : match;
-        });
-    };
-    const finalPromptTextForPlatform = handlebarsLikeInterpolate(QUIZ_GENERATION_PROMPT_TEXT_TEMPLATE, { numQuestions: promptData.numQuestions });
+    const finalPromptTextForPlatform = handlebarsLikeInterpolate(
+        QUIZ_GENERATION_PROMPT_TEXT_FOR_AI_GENERATE_FALLBACK,
+        { numQuestions: promptData.numQuestions }
+    );
 
     const generateResponse = await ai.generate({
       model: 'googleai/gemini-2.0-flash', // Explicitly specify model for direct call
       prompt: [
-        { text: finalPromptTextForPlatform }, // Interpolated prompt text
-        { media: { url: promptData.pdfDataUri } } // Pass PDF as media part
+        { text: finalPromptTextForPlatform },
+        { media: { url: promptData.pdfDataUri } }
       ],
-      output: { 
+      output: {
         format: 'json',
         schema: QuizGenerationOutputSchema,
       },
+      config: {
+        // safetySettings can be added here if needed
+      }
     });
-    
+
     llmResponse = generateResponse.output;
 
     if (!llmResponse || !llmResponse.questions || !llmResponse.correctAnswers) {
@@ -183,7 +206,6 @@ async function generateQuizLogic(input: QuizGenerationInput): Promise<QuizGenera
 
   } catch (fallbackError: any) {
       console.error("Error during platform fallback using direct ai.generate():", fallbackError);
-      // This will be caught by the flow and then by the page, showing the error toast
       throw new Error(`Platform fallback for quiz generation failed: ${fallbackError.message || 'Unknown error during fallback'}`);
   }
 }
@@ -200,5 +222,3 @@ const quizGenerationFlow = ai.defineFlow(
 export async function generateQuizQuestions(input: QuizGenerationInput): Promise<QuizGenerationOutput> {
   return quizGenerationFlow(input);
 }
-
-    
